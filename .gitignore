@@ -1,0 +1,15 @@
+/build/
+/cmake-build-*/
+/out/
+/.vs/
+/.idea/workspace.xml
+*.user
+*.VC.db
+*.opendb
+
+# CMake / FetchContent (often under build/, but ignore if generated at repo root)
+/_deps/
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+compile_commands.json
