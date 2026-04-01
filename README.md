@@ -1,38 +1,40 @@
-# untitled_engine
+# Hextech Engine
 
-Integration-first C++ game engine (Vulkan renderer + GLFW, GLM, EnTT, Jolt, Dear ImGui, VMA, cgltf, stb_image, nlohmann/json).
+An integration-first, Data-Oriented C++ game engine. Built with a focus on a custom Vulkan renderer and seamlessly connecting industry-standard open-source libraries (GLFW, GLM, EnTT, Jolt Physics, Dear ImGui, VMA, cgltf, stb_image, nlohmann/json).
 
 ## Prerequisites
 
 - **CMake** 3.24+
-- **Vulkan SDK** (Windows: install from [LunarG](https://vulkan.lunarg.com/) and set `VULKAN_SDK`)
-- **C++20** compiler (MSVC 2022+ recommended on Windows)
+- **Vulkan SDK** (Windows: install from [LunarG](https://vulkan.lunarg.com/) and set the `VULKAN_SDK` environment variable)
+- **C++20** compatible compiler (MSVC 2022+ recommended on Windows, GCC/Clang on Linux)
 
-## Build
+## Build Instructions
+
+Generate the build files and compile the project:
 
 ```bash
 cmake -B build -S .
 cmake --build build --config Release
 ```
 
-Run the sandbox:
+Run the sandbox application:
 
 ```bash
-./build/Release/sandbox.exe   # MSVC output layout may vary
+./build/Release/sandbox.exe   # Note: MSVC output directory layout may vary
 ```
 
-## Layout
+**Note:** An optional `engine_config.json` in the working directory will be loaded automatically if present.
 
-- `engine/core` — logging, input, events (`entt::dispatcher`), config (JSON)
-- `engine/renderer/vulkan` — Vulkan context, VMA, PBR renderer scaffolding, shader hot-reload helper
-- `engine/integration` — GLFW platform, ImGui Vulkan layer
-- `engine/assets` — asset manager (cgltf, stb_image, async loads)
-- `engine/ecs` — shared component headers
-- `engine/physics` — Jolt world wrapper
-- `apps/sandbox` — demo application
+## Project Layout
 
-Optional `engine_config.json` in the working directory is loaded if present.
+- **`engine/core`** — Core systems: logging, input abstraction, event system (`entt::dispatcher`), and config management (JSON).
+- **`engine/renderer/vulkan`** — Custom Vulkan backend: swapchain context, VMA integration, PBR renderer scaffolding, and shader hot-reload capabilities.
+- **`engine/integration`** — Middleware adapters: GLFW platform windowing and ImGui Vulkan layer.
+- **`engine/assets`** — Asset pipeline: asynchronous loading of glTF models (cgltf) and textures (stb_image) with path-based caching.
+- **`engine/ecs`** — Data-oriented design: shared EnTT component definitions.
+- **`engine/physics`** — Physics simulation: Jolt Physics world wrapper and ECS bridge.
+- **`apps/sandbox`** — The primary demo application, vertical slice, and testing ground.
 
 ## Shaders
 
-GLSL sources live under `assets/shaders/`. SPIR-V is generated at build time if `glslc` is on your `PATH` (from the Vulkan SDK).
+GLSL source files are located under `assets/shaders/`. SPIR-V binaries (`.spv`) are generated automatically at build time if `glslc` is available on your system `PATH` (included with the Vulkan SDK).
