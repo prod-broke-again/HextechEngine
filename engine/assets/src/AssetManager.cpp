@@ -17,48 +17,33 @@ namespace engine {
 
 namespace {
 
-std::vector<char> readFileBinary(const std::filesystem::path& path) {
-    std::ifstream file(path, std::ios::binary | std::ios::ate);
-    if (!file) {
-        return {};
-    }
-    const auto size = static_cast<size_t>(file.tellg());
-    std::vector<char> buffer(size);
-    file.seekg(0);
-    file.read(buffer.data(), static_cast<std::streamsize>(size));
-    return buffer;
-}
-
 void cgltfFreeData(cgltf_data* data) {
     if (data) {
         cgltf_free(data);
     }
 }
 
-std::shared_ptr<LoadedGltfCpu> parseGltfFromMemory(const std::vector<char>& bytes,
-                                                   const std::filesystem::path& pathForUri) {
+std::shared_ptr<LoadedGltfCpu> parseGltfFile(const std::filesystem::path& path) {
     cgltf_options options{};
     cgltf_data* data = nullptr;
-    const cgltf_result r =
-        cgltf_parse(&options, bytes.data(), static_cast<cgltf_size>(bytes.size()), &data);
-    if (r != cgltf_result_success || !data) {
-        log(LogLevel::Error, "cgltf_parse failed");
+    const std::string gltfPath = path.string();
+    if (cgltf_parse_file(&options, gltfPath.c_str(), &data) != cgltf_result_success || !data) {
+        log(LogLevel::Error, "cgltf_parse_file failed for " + gltfPath);
         return nullptr;
     }
-    const std::string base = pathForUri.parent_path().string();
-    if (cgltf_load_buffers(&options, data, base.c_str()) != cgltf_result_success) {
-        log(LogLevel::Error, "cgltf_load_buffers failed");
+    if (cgltf_load_buffers(&options, data, gltfPath.c_str()) != cgltf_result_success) {
+        log(LogLevel::Error, "cgltf_load_buffers failed for " + gltfPath);
         cgltf_free(data);
         return nullptr;
     }
     if (cgltf_validate(data) != cgltf_result_success) {
-        log(LogLevel::Warn, "cgltf_validate reported issues");
+        log(LogLevel::Warn, "cgltf_validate reported issues for " + gltfPath);
     }
     return std::make_shared<LoadedGltfCpu>(
         LoadedGltfCpu{std::unique_ptr<cgltf_data, void (*)(cgltf_data*)>(data, cgltfFreeData)});
 }
 
-TexturePtr loadTextureFile(const std::filesystem::path& path, bool hdr) {
+std::shared_ptr<LoadedTextureCpu> loadTextureFile(const std::filesystem::path& path, bool hdr) {
     auto tex = std::make_shared<LoadedTextureCpu>();
     if (hdr) {
         int w = 0;
@@ -97,17 +82,17 @@ TexturePtr loadTextureFile(const std::filesystem::path& path, bool hdr) {
 
 } // namespace
 
-GltfPtr AssetManager::getOrLoadGltf(const std::filesystem::path& path) {
+AssetManager::GltfPtr AssetManager::getOrLoadGltf(const std::filesystem::path& path) {
     const std::string key = path.generic_string();
     std::lock_guard lock(m_mutex);
     if (auto it = m_gltf.find(key); it != m_gltf.end()) {
         return it->second;
     }
-    const auto bytes = readFileBinary(path);
-    if (bytes.empty()) {
+    if (!std::filesystem::exists(path)) {
+        log(LogLevel::Warn, "getOrLoadGltf: file not found " + path.string());
         return nullptr;
     }
-    auto loaded = parseGltfFromMemory(bytes, path);
+    auto loaded = parseGltfFile(path);
     if (!loaded) {
         return nullptr;
     }
@@ -115,7 +100,7 @@ GltfPtr AssetManager::getOrLoadGltf(const std::filesystem::path& path) {
     return loaded;
 }
 
-TexturePtr AssetManager::getOrLoadTexture(const std::filesystem::path& path, bool hdr) {
+AssetManager::TexturePtr AssetManager::getOrLoadTexture(const std::filesystem::path& path, bool hdr) {
     const std::string key = path.generic_string();
     std::lock_guard lock(m_mutex);
     if (auto it = m_textures.find(key); it != m_textures.end()) {
@@ -136,14 +121,36 @@ void AssetManager::unload(const std::filesystem::path& path) {
     m_textures.erase(key);
 }
 
-std::future<GltfPtr> AssetManager::loadGltfAsync(const std::filesystem::path& path) {
+std::future<AssetManager::GltfPtr> AssetManager::loadGltfAsync(const std::filesystem::path& path) {
     return std::async(std::launch::async, [this, path]() { return getOrLoadGltf(path); });
 }
 
-std::future<TexturePtr> AssetManager::loadTextureAsync(const std::filesystem::path& path, bool hdr) {
+std::future<AssetManager::TexturePtr> AssetManager::loadTextureAsync(const std::filesystem::path& path, bool hdr) {
     return std::async(std::launch::async, [this, path, hdr]() {
         return getOrLoadTexture(path, hdr);
     });
+}
+
+AssetManager::TexturePtr AssetManager::loadTextureFromMemory(const unsigned char* data, int size) {
+    if (!data || size <= 0) {
+        return nullptr;
+    }
+    int width = 0;
+    int height = 0;
+    int channels = 0;
+    unsigned char* pixels = stbi_load_from_memory(data, size, &width, &height, &channels, 4);
+    if (!pixels) {
+        log(LogLevel::Error, "stbi_load_from_memory failed");
+        return nullptr;
+    }
+    auto tex = std::make_shared<LoadedTextureCpu>();
+    tex->width = width;
+    tex->height = height;
+    tex->channels = 4;
+    const size_t count = static_cast<size_t>(width) * static_cast<size_t>(height) * 4u;
+    tex->pixels.assign(pixels, pixels + count);
+    stbi_image_free(pixels);
+    return tex;
 }
 
 } // namespace engine

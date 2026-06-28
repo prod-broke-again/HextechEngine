@@ -5,7 +5,7 @@
 #include <Jolt/Core/Factory.h>
 #include <Jolt/Core/JobSystemThreadPool.h>
 #include <Jolt/Core/TempAllocator.h>
-#include <Jolt/PhysicsBody/BodyInterface.h>
+#include <Jolt/Physics/Body/BodyInterface.h>
 #include <Jolt/RegisterTypes.h>
 
 namespace engine {
@@ -50,6 +50,21 @@ public:
         JPH_ASSERT(inLayer < Layers::NUM_LAYERS);
         return mObjectToBroadPhase[inLayer];
     }
+
+#if defined(JPH_EXTERNAL_PROFILE) || defined(JPH_PROFILE_ENABLED)
+    const char* GetBroadPhaseLayerName(JPH::BroadPhaseLayer inLayer) const override {
+        switch (static_cast<JPH::BroadPhaseLayer::Type>(inLayer)) {
+        case static_cast<JPH::BroadPhaseLayer::Type>(BroadPhaseLayers::NON_MOVING):
+            return "NON_MOVING";
+        case static_cast<JPH::BroadPhaseLayer::Type>(BroadPhaseLayers::MOVING):
+            return "MOVING";
+        default:
+            JPH_ASSERT(false);
+            return "INVALID";
+        }
+    }
+#endif
+
 
 private:
     JPH::BroadPhaseLayer mObjectToBroadPhase[Layers::NUM_LAYERS];

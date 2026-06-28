@@ -1,5 +1,6 @@
 add_executable(sandbox
     src/main.cpp
+    src/SandboxApp.cpp
 )
 
 target_link_libraries(sandbox PRIVATE
@@ -15,6 +16,7 @@ target_link_libraries(sandbox PRIVATE
 )
 
 target_include_directories(sandbox PRIVATE
+    ${CMAKE_SOURCE_DIR}/apps/sandbox/src
     ${CMAKE_SOURCE_DIR}/engine/core/include
     ${CMAKE_SOURCE_DIR}/engine/integration/include
     ${CMAKE_SOURCE_DIR}/engine/renderer/vulkan/include

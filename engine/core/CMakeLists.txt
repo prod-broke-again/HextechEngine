@@ -2,8 +2,10 @@ add_library(engine_core STATIC
     src/Application.cpp
     src/Log.cpp
     src/Input.cpp
+    src/InputMap.cpp
     src/Events.cpp
     src/Config.cpp
+    src/Time.cpp
 )
 
 target_include_directories(engine_core

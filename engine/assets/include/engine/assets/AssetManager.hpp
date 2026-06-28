@@ -32,6 +32,7 @@ public:
 
     [[nodiscard]] GltfPtr getOrLoadGltf(const std::filesystem::path& path);
     [[nodiscard]] TexturePtr getOrLoadTexture(const std::filesystem::path& path, bool hdr = false);
+    [[nodiscard]] TexturePtr loadTextureFromMemory(const unsigned char* data, int size);
 
     void unload(const std::filesystem::path& path);
 

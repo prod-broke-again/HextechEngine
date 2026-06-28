@@ -76,14 +76,16 @@ add_library(imgui_lib STATIC
 target_include_directories(imgui_lib PUBLIC ${imgui_SOURCE_DIR} ${imgui_SOURCE_DIR}/backends)
 target_link_libraries(imgui_lib PUBLIC glfw Vulkan::Vulkan)
 
-# Jolt Physics
+# Jolt Physics (CMake project lives in Build/)
 FetchContent_Declare(
     JoltPhysics
     GIT_REPOSITORY https://github.com/jrouwe/JoltPhysics.git
     GIT_TAG v5.2.0
+    SOURCE_SUBDIR Build
 )
-set(JPH_ENABLE_TESTS OFF CACHE BOOL "" FORCE)
-set(JPH_ENABLE_SAMPLES OFF CACHE BOOL "" FORCE)
+set(ENABLE_ALL_WARNINGS OFF CACHE BOOL "" FORCE)
+set(ENABLE_INSTALL OFF CACHE BOOL "" FORCE)
+set(USE_STATIC_MSVC_RUNTIME_LIBRARY OFF CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(JoltPhysics)
 
 # stb_image (header-only fetch)

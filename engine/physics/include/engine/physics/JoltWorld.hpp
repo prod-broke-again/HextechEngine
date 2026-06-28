@@ -1,8 +1,8 @@
 #pragma once
 
 #include <Jolt/Jolt.h>
-#include <Jolt/PhysicsBody/BodyInterface.h>
-#include <Jolt/PhysicsSystem/PhysicsSystem.h>
+#include <Jolt/Physics/Body/BodyInterface.h>
+#include <Jolt/Physics/PhysicsSystem.h>
 
 #include <memory>
 

@@ -1,0 +1,6 @@
+[1782065989] [INFO] JoltWorld initialized
+[1782065989] [INFO] PbrRenderer ready
+[1782065989] [INFO] ObjMeshLoader: loaded tripo_convert_3ed9c2f4-5451-493c-886c-6e83544602ce.obj (45775 verts, 91226 tris)
+[1782065990] [INFO] ObjMeshLoader: loaded tripo_convert_1e754444-03cc-40e6-910c-468302f8a39e.obj (148803 verts, 294903 tris)
+[1782065990] [INFO] spawnGltfModel: loading fantasy+character+3d+model.glb
+[1782065990] [INFO] spawnGltfModel: parsed fantasy+character+3d+model.glb

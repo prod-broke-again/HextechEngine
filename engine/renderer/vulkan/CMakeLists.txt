@@ -5,6 +5,8 @@ set(SPV_OUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/spirv")
 
 set(SPV_PBR_VERT "${SPV_OUT_DIR}/pbr.vert.spv")
 set(SPV_PBR_FRAG "${SPV_OUT_DIR}/pbr.frag.spv")
+set(SPV_DEBUG_VERT "${SPV_OUT_DIR}/debug.vert.spv")
+set(SPV_DEBUG_FRAG "${SPV_OUT_DIR}/debug.frag.spv")
 set(SPV_FULLSCREEN_VERT "${SPV_OUT_DIR}/fullscreen.vert.spv")
 set(SPV_EQUIRECT_FRAG "${SPV_OUT_DIR}/equirect_to_cube.frag.spv")
 
@@ -23,6 +25,18 @@ if(GLSLC)
         COMMENT "Compile pbr.frag"
     )
     add_custom_command(
+        OUTPUT ${SPV_DEBUG_VERT}
+        COMMAND ${GLSLC} -fshader-stage=vertex -o ${SPV_DEBUG_VERT} ${SHADER_DIR}/debug.vert
+        DEPENDS ${SHADER_DIR}/debug.vert
+        COMMENT "Compile debug.vert"
+    )
+    add_custom_command(
+        OUTPUT ${SPV_DEBUG_FRAG}
+        COMMAND ${GLSLC} -fshader-stage=fragment -o ${SPV_DEBUG_FRAG} ${SHADER_DIR}/debug.frag
+        DEPENDS ${SHADER_DIR}/debug.frag
+        COMMENT "Compile debug.frag"
+    )
+    add_custom_command(
         OUTPUT ${SPV_FULLSCREEN_VERT}
         COMMAND ${GLSLC} -fshader-stage=vertex -o ${SPV_FULLSCREEN_VERT} ${SHADER_DIR}/fullscreen.vert
         DEPENDS ${SHADER_DIR}/fullscreen.vert
@@ -34,7 +48,11 @@ if(GLSLC)
         DEPENDS ${SHADER_DIR}/equirect_to_cube.frag
         COMMENT "Compile equirect_to_cube.frag"
     )
-    set(ENGINE_SHADER_SPIRV ${SPV_PBR_VERT} ${SPV_PBR_FRAG} ${SPV_FULLSCREEN_VERT} ${SPV_EQUIRECT_FRAG})
+    set(ENGINE_SHADER_SPIRV
+        ${SPV_PBR_VERT} ${SPV_PBR_FRAG}
+        ${SPV_DEBUG_VERT} ${SPV_DEBUG_FRAG}
+        ${SPV_FULLSCREEN_VERT} ${SPV_EQUIRECT_FRAG}
+    )
 else()
     message(WARNING "glslc not found; shader SPIR-V must be provided manually in ${SPV_OUT_DIR}")
     set(ENGINE_SHADER_SPIRV "")
@@ -43,7 +61,10 @@ endif()
 add_library(engine_vulkan STATIC
     src/VulkanContext.cpp
     src/VmaAllocator.cpp
+    src/GpuMeshCache.cpp
+    src/GpuTextureCache.cpp
     src/PbrRenderer.cpp
+    src/DebugDraw.cpp
     src/ShaderHotReload.cpp
     ${ENGINE_SHADER_SPIRV}
 )
@@ -57,9 +78,12 @@ target_include_directories(engine_vulkan
 target_link_libraries(engine_vulkan
     PUBLIC
         engine_core
+        engine_assets
+        engine_ecs
         glfw
         Vulkan::Vulkan
         glm::glm
+        EnTT::EnTT
 )
 
 if(TARGET GPUOpen::VulkanMemoryAllocator)
@@ -74,6 +98,8 @@ target_compile_definitions(engine_vulkan PRIVATE
     SHADER_DIR="${SHADER_DIR}"
     SPV_PBR_VERT_PATH="${SPV_PBR_VERT}"
     SPV_PBR_FRAG_PATH="${SPV_PBR_FRAG}"
+    SPV_DEBUG_VERT_PATH="${SPV_DEBUG_VERT}"
+    SPV_DEBUG_FRAG_PATH="${SPV_DEBUG_FRAG}"
     SPV_FULLSCREEN_VERT_PATH="${SPV_FULLSCREEN_VERT}"
     SPV_EQUIRECT_FRAG_PATH="${SPV_EQUIRECT_FRAG}"
 )
