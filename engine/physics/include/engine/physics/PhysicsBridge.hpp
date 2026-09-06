@@ -27,6 +27,7 @@ void createDynamicConvexHull(JoltWorld& world, entt::registry& registry, entt::e
                              const std::vector<glm::vec3>& vertices, float mass = 1.f);
 void syncTransformsFromPhysics(entt::registry& registry, JoltWorld& world);
 void destroyPhysicsBodies(entt::registry& registry, JoltWorld& world);
+void destroyPhysicsBody(JoltWorld& world, entt::registry& registry, entt::entity entity);
 void clearDynamicBodies(entt::registry& registry, JoltWorld& world);
 
 [[nodiscard]] bool raycast(JoltWorld& world, const entt::registry& registry,

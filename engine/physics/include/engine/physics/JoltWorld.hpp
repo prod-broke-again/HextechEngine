@@ -20,6 +20,7 @@ public:
 
     [[nodiscard]] JPH::PhysicsSystem& physics();
     [[nodiscard]] JPH::BodyInterface& bodyInterface();
+    [[nodiscard]] JPH::TempAllocator& tempAllocator();
 
 private:
     struct Impl;

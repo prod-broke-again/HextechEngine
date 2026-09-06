@@ -18,6 +18,9 @@ enum class Action {
     SpawnTeapot,
     ShootSphere,
     KickObject,
+    Jump,
+    ToggleCameraMode,
+    InspectObject,
 };
 
 class InputMap {

@@ -122,7 +122,10 @@ void SandboxApp::setupInput() {
     m_inputMap.bind(Action::MoveBack, GLFW_KEY_S);
     m_inputMap.bind(Action::MoveLeft, GLFW_KEY_A);
     m_inputMap.bind(Action::MoveRight, GLFW_KEY_D);
-    m_inputMap.bind(Action::SpawnBox, GLFW_KEY_SPACE);
+    m_inputMap.bind(Action::SpawnBox, GLFW_KEY_B);
+    m_inputMap.bind(Action::Jump, GLFW_KEY_SPACE);
+    m_inputMap.bind(Action::ToggleCameraMode, GLFW_KEY_F1);
+    m_inputMap.bind(Action::InspectObject, GLFW_KEY_I);
     m_inputMap.bind(Action::SpawnTeapot, GLFW_KEY_T);
     m_inputMap.bind(Action::ShootSphere, GLFW_KEY_F);
     m_inputMap.bind(Action::KickObject, GLFW_KEY_E);
@@ -214,6 +217,47 @@ void SandboxApp::spawnScene() {
     m_registry.emplace<TransformWorld>(camera);
     m_registry.emplace<CameraComponent>(camera);
     m_registry.emplace<FreeFlyController>(camera);
+
+    m_character.init(m_physics, {0.0f, 0.5f, 6.0f});
+}
+
+void SandboxApp::toggleCameraMode() {
+    auto view = m_registry.view<TransformLocal, CameraComponent, FreeFlyController>();
+    if (view.begin() == view.end()) return;
+    auto camEntity = *view.begin();
+    auto& camTransform = view.get<TransformLocal>(camEntity);
+
+    if (m_cameraMode == CameraMode::FreeFly) {
+        m_cameraMode = CameraMode::FirstPerson;
+        glm::vec3 charPos = camTransform.translation - glm::vec3(0.0f, m_character.eyeHeight, 0.0f);
+        m_character.setPosition(charPos);
+        log(LogLevel::Info, "Camera mode: FirstPerson (FPS Controller)");
+    } else {
+        m_cameraMode = CameraMode::FreeFly;
+        log(LogLevel::Info, "Camera mode: FreeFly");
+    }
+}
+
+void SandboxApp::inspectObjectUnderCrosshair() {
+    auto view = m_registry.view<TransformLocal, CameraComponent>();
+    if (view.begin() == view.end()) return;
+    auto camEntity = *view.begin();
+    const auto& camTransform = view.get<TransformLocal>(camEntity);
+
+    const auto* controller = m_registry.try_get<FreeFlyController>(camEntity);
+    const float yaw = controller ? controller->yaw : 0.f;
+    const float pitch = controller ? controller->pitch : 0.f;
+
+    const glm::vec3 forward{std::cos(yaw) * std::cos(pitch), std::sin(pitch),
+                            std::sin(yaw) * std::cos(pitch)};
+
+    RaycastHit hit;
+    if (raycast(m_physics, m_registry, camTransform.translation, forward, 100.f, hit)) {
+        if (hit.entity != entt::null) {
+            m_selectedEntity = hit.entity;
+            log(LogLevel::Info, "Inspected entity: " + std::to_string(static_cast<uint32_t>(hit.entity)));
+        }
+    }
 }
 
 void SandboxApp::spawnDynamicObject(const MeshComponent& meshComp, const glm::vec3& halfExtents) {
@@ -317,13 +361,52 @@ void SandboxApp::clearSpawnedObjects() {
 
 void SandboxApp::updateFrame(float deltaTime) {
     m_inputMap.beginFrame(m_input);
-    updateFreeFlyCamera(m_registry, m_input, m_inputMap, deltaTime);
 
     const bool mouseCaptured = ImGui::GetIO().WantCaptureMouse;
     const bool keyboardCaptured = ImGui::GetIO().WantCaptureKeyboard;
 
     if (!keyboardCaptured) {
-        if (m_inputMap.actionPressed(m_input, Action::SpawnBox)) {
+        if (m_inputMap.actionPressed(m_input, Action::ToggleCameraMode)) {
+            toggleCameraMode();
+        }
+        if (m_inputMap.actionPressed(m_input, Action::InspectObject)) {
+            inspectObjectUnderCrosshair();
+        }
+    }
+
+    if (m_cameraMode == CameraMode::FirstPerson) {
+        auto view = m_registry.view<TransformLocal, CameraComponent, FreeFlyController>();
+        for (const auto camEntity : view) {
+            auto& camTransform = view.get<TransformLocal>(camEntity);
+            auto& controller = view.get<FreeFlyController>(camEntity);
+
+            if (!mouseCaptured && m_inputMap.actionDown(m_input, Action::Look)) {
+                const glm::vec2 delta = m_inputMap.lookDelta();
+                controller.yaw += delta.x * controller.lookSensitivity;
+                controller.pitch -= delta.y * controller.lookSensitivity;
+                controller.pitch = std::clamp(controller.pitch, -1.4f, 1.4f);
+            }
+
+            glm::vec2 moveInput{0.0f};
+            bool jump = false;
+            if (!keyboardCaptured) {
+                if (m_inputMap.actionDown(m_input, Action::MoveForward)) moveInput.y += 1.0f;
+                if (m_inputMap.actionDown(m_input, Action::MoveBack))    moveInput.y -= 1.0f;
+                if (m_inputMap.actionDown(m_input, Action::MoveRight))   moveInput.x += 1.0f;
+                if (m_inputMap.actionDown(m_input, Action::MoveLeft))    moveInput.x -= 1.0f;
+                if (m_inputMap.actionPressed(m_input, Action::Jump))     jump = true;
+            }
+
+            m_character.update(m_physics, deltaTime, moveInput, controller.yaw, jump);
+            camTransform.translation = m_character.position() + glm::vec3(0.0f, m_character.eyeHeight, 0.0f);
+        }
+    } else {
+        updateFreeFlyCamera(m_registry, m_input, m_inputMap, deltaTime);
+    }
+
+    if (!keyboardCaptured) {
+        if (m_inputMap.actionPressed(m_input, Action::SpawnBox) ||
+            (m_cameraMode == CameraMode::FreeFly && m_input.keyPressed(GLFW_KEY_SPACE))) {
             spawnDynamicObject(m_cubeComp, {0.5f, 0.5f, 0.5f});
         }
         if (m_hasTeapot && m_inputMap.actionPressed(m_input, Action::SpawnTeapot)) {
@@ -416,8 +499,25 @@ bool SandboxApp::renderFrame() {
     ImGui::Text("Dynamic Bodies: %zu", dynamicBodiesCount);
 
     ImGui::Separator();
+    ImGui::Text("Camera Mode (F1):");
+    int currentMode = (m_cameraMode == CameraMode::FreeFly) ? 0 : 1;
+    if (ImGui::RadioButton("Free-Fly", &currentMode, 0)) {
+        if (m_cameraMode != CameraMode::FreeFly) toggleCameraMode();
+    }
+    ImGui::SameLine();
+    if (ImGui::RadioButton("FPS Character", &currentMode, 1)) {
+        if (m_cameraMode != CameraMode::FirstPerson) toggleCameraMode();
+    }
+    if (m_cameraMode == CameraMode::FirstPerson) {
+        ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.4f, 1.0f), "WASD = Move, Space = Jump, RMB = Look");
+        ImGui::Text("Grounded: %s", m_character.isGrounded() ? "YES" : "NO");
+        const glm::vec3 p = m_character.position();
+        ImGui::Text("Pos: (%.2f, %.2f, %.2f)", p.x, p.y, p.z);
+    }
+
+    ImGui::Separator();
     ImGui::Text("Physics Actions:");
-    if (ImGui::Button("Spawn Cube (Space)")) {
+    if (ImGui::Button("Spawn Cube (B / Space)")) {
         spawnDynamicObject(m_cubeComp, {0.5f, 0.5f, 0.5f});
     }
     ImGui::SameLine();
@@ -434,7 +534,45 @@ bool SandboxApp::renderFrame() {
     }
     ImGui::SameLine();
     if (ImGui::Button("Clear Dynamic Objects")) {
+        if (m_selectedEntity != entt::null && m_registry.valid(m_selectedEntity)) {
+            if (const auto* body = m_registry.try_get<RigidBodyComponent>(m_selectedEntity); body && body->dynamic) {
+                m_selectedEntity = entt::null;
+            }
+        }
         clearSpawnedObjects();
+    }
+
+    ImGui::Separator();
+    ImGui::Text("Entity & Material Inspector:");
+    if (ImGui::Button("Inspect Under Crosshair (I)")) {
+        inspectObjectUnderCrosshair();
+    }
+
+    if (m_selectedEntity != entt::null && m_registry.valid(m_selectedEntity)) {
+        ImGui::Text("Selected Entity: %u", static_cast<uint32_t>(m_selectedEntity));
+
+        if (auto* transform = m_registry.try_get<TransformLocal>(m_selectedEntity)) {
+            ImGui::DragFloat3("Position", &transform->translation.x, 0.05f);
+            ImGui::DragFloat3("Scale", &transform->scale.x, 0.05f, 0.01f, 100.0f);
+        }
+
+        if (auto* meshComp = m_registry.try_get<MeshComponent>(m_selectedEntity)) {
+            ImGui::ColorEdit3("Tint", &meshComp->tint.x);
+            ImGui::SliderFloat("Metallic", &meshComp->metallic, 0.0f, 1.0f);
+            ImGui::SliderFloat("Roughness", &meshComp->roughness, 0.0f, 1.0f);
+        }
+
+        if (ImGui::Button("Deselect")) {
+            m_selectedEntity = entt::null;
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Delete Entity")) {
+            destroyPhysicsBody(m_physics, m_registry, m_selectedEntity);
+            m_registry.destroy(m_selectedEntity);
+            m_selectedEntity = entt::null;
+        }
+    } else {
+        ImGui::TextDisabled("No entity selected. Press 'I' while aiming at an object.");
     }
 
     ImGui::Separator();

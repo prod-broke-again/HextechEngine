@@ -134,6 +134,8 @@ JPH::PhysicsSystem& JoltWorld::physics() { return m_impl->physics; }
 
 JPH::BodyInterface& JoltWorld::bodyInterface() { return m_impl->physics.GetBodyInterface(); }
 
+JPH::TempAllocator& JoltWorld::tempAllocator() { return *m_impl->tempAllocator; }
+
 void JoltWorld::step(float deltaTime) {
     if (!m_impl) {
         return;

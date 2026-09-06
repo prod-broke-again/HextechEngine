@@ -37,6 +37,11 @@ struct CameraComponent {
     bool active = true;
 };
 
+enum class CameraMode {
+    FreeFly,
+    FirstPerson
+};
+
 struct FreeFlyController {
     float yaw = -1.5707963f;
     float pitch = -0.2f;

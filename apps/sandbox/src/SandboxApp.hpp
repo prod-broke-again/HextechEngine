@@ -6,6 +6,7 @@
 #include "engine/core/Time.hpp"
 #include "engine/integration/ImGuiLayer.hpp"
 #include "engine/integration/PlatformGLFW.hpp"
+#include "engine/physics/CharacterController.hpp"
 #include "engine/physics/JoltWorld.hpp"
 #include "engine/renderer/vulkan/DebugDraw.hpp"
 #include "engine/renderer/vulkan/GpuMeshCache.hpp"
@@ -32,6 +33,8 @@ private:
     void spawnDynamicConvexObject(const MeshComponent& meshComp, const std::vector<glm::vec3>& vertices);
     void shootSphere();
     void kickObjectUnderCrosshair();
+    void inspectObjectUnderCrosshair();
+    void toggleCameraMode();
     void clearSpawnedObjects();
     void updateFrame(float deltaTime);
     [[nodiscard]] bool renderFrame();
@@ -51,6 +54,9 @@ private:
     std::unique_ptr<GpuTextureCache> m_textures;
     JoltWorld m_physics;
     AssetManager m_assets;
+    CharacterController m_character;
+    CameraMode m_cameraMode = CameraMode::FreeFly;
+    entt::entity m_selectedEntity = entt::null;
     bool m_showDebug = true;
 
     MeshComponent m_cubeComp{};

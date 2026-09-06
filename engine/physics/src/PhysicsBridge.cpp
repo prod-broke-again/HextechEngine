@@ -137,6 +137,20 @@ void destroyPhysicsBodies(entt::registry& registry, JoltWorld& world) {
     }
 }
 
+void destroyPhysicsBody(JoltWorld& world, entt::registry& registry, entt::entity entity) {
+    if (auto* body = registry.try_get<RigidBodyComponent>(entity)) {
+        if (body->bodyIndex != UINT32_MAX) {
+            const JPH::BodyID bodyId(body->bodyIndex);
+            JPH::BodyInterface& iface = world.bodyInterface();
+            if (iface.IsAdded(bodyId)) {
+                iface.RemoveBody(bodyId);
+                iface.DestroyBody(bodyId);
+            }
+            body->bodyIndex = UINT32_MAX;
+        }
+    }
+}
+
 void clearDynamicBodies(entt::registry& registry, JoltWorld& world) {
     auto view = registry.view<RigidBodyComponent>();
     JPH::BodyInterface& iface = world.bodyInterface();
