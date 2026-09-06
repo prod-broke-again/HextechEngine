@@ -124,7 +124,11 @@ void SandboxApp::setupInput() {
     m_inputMap.bind(Action::MoveRight, GLFW_KEY_D);
     m_inputMap.bind(Action::SpawnBox, GLFW_KEY_SPACE);
     m_inputMap.bind(Action::SpawnTeapot, GLFW_KEY_T);
+    m_inputMap.bind(Action::ShootSphere, GLFW_KEY_F);
+    m_inputMap.bind(Action::KickObject, GLFW_KEY_E);
     m_inputMap.bindMouse(Action::Look, GLFW_MOUSE_BUTTON_RIGHT);
+    m_inputMap.bindMouse(Action::ShootSphere, GLFW_MOUSE_BUTTON_LEFT);
+    m_inputMap.bindMouse(Action::KickObject, GLFW_MOUSE_BUTTON_MIDDLE);
 }
 
 bool SandboxApp::initEngine() {
@@ -179,6 +183,13 @@ void SandboxApp::spawnScene() {
     m_cubeComp.mesh = m_meshes->upload(MeshBuilder::box({0.5f, 0.5f, 0.5f}, {0.8f, 0.2f, 0.2f}));
     m_cubeComp.metallic = 0.1f;
     m_cubeComp.roughness = 0.8f;
+
+    m_sphereComp.mesh = m_meshes->upload(MeshBuilder::sphere(0.4f, 24, 24, {0.2f, 0.65f, 0.95f}));
+    m_sphereComp.tint = {0.25f, 0.75f, 1.0f};
+    m_sphereComp.metallic = 0.9f;
+    m_sphereComp.roughness = 0.15f;
+
+    m_renderer.setLightDir(m_sunDirection);
 
     MeshCpuData teapotData = ObjMeshLoader::loadFromFile("assets/teapot.obj");
     if (!teapotData.empty()) {
@@ -253,15 +264,80 @@ void SandboxApp::spawnDynamicConvexObject(const MeshComponent& meshComp, const s
     createDynamicConvexHull(m_physics, m_registry, entity, vertices, 1.0f);
 }
 
+void SandboxApp::shootSphere() {
+    auto view = m_registry.view<TransformLocal, CameraComponent>();
+    if (view.begin() == view.end()) return;
+    auto camEntity = *view.begin();
+    const auto& camTransform = view.get<TransformLocal>(camEntity);
+
+    const auto* controller = m_registry.try_get<FreeFlyController>(camEntity);
+    const float yaw = controller ? controller->yaw : 0.f;
+    const float pitch = controller ? controller->pitch : 0.f;
+
+    const glm::vec3 forward{std::cos(yaw) * std::cos(pitch), std::sin(pitch),
+                            std::sin(yaw) * std::cos(pitch)};
+
+    const glm::vec3 spawnPos = camTransform.translation + (forward * 1.5f);
+    const glm::vec3 velocity = forward * 30.f;
+
+    const entt::entity entity = m_registry.create();
+    m_registry.emplace<TransformLocal>(entity, TransformLocal{spawnPos});
+    m_registry.emplace<TransformWorld>(entity);
+    m_registry.emplace<MeshComponent>(entity, m_sphereComp);
+    m_registry.emplace<RenderableTag>(entity);
+    m_registry.emplace<RigidBodyComponent>(entity);
+    createDynamicSphere(m_physics, m_registry, entity, 0.4f, 4.0f, velocity);
+}
+
+void SandboxApp::kickObjectUnderCrosshair() {
+    auto view = m_registry.view<TransformLocal, CameraComponent>();
+    if (view.begin() == view.end()) return;
+    auto camEntity = *view.begin();
+    const auto& camTransform = view.get<TransformLocal>(camEntity);
+
+    const auto* controller = m_registry.try_get<FreeFlyController>(camEntity);
+    const float yaw = controller ? controller->yaw : 0.f;
+    const float pitch = controller ? controller->pitch : 0.f;
+
+    const glm::vec3 forward{std::cos(yaw) * std::cos(pitch), std::sin(pitch),
+                            std::sin(yaw) * std::cos(pitch)};
+
+    RaycastHit hit;
+    if (raycast(m_physics, m_registry, camTransform.translation, forward, 100.f, hit)) {
+        if (hit.entity != entt::null) {
+            const glm::vec3 impulse = (forward * 35.f + glm::vec3(0.f, 12.f, 0.f));
+            applyImpulse(m_physics, m_registry, hit.entity, impulse, hit.position);
+        }
+    }
+}
+
+void SandboxApp::clearSpawnedObjects() {
+    clearDynamicBodies(m_registry, m_physics);
+}
+
 void SandboxApp::updateFrame(float deltaTime) {
     m_inputMap.beginFrame(m_input);
     updateFreeFlyCamera(m_registry, m_input, m_inputMap, deltaTime);
 
-    if (m_inputMap.actionPressed(m_input, Action::SpawnBox)) {
-        spawnDynamicObject(m_cubeComp, {0.5f, 0.5f, 0.5f});
+    const bool mouseCaptured = ImGui::GetIO().WantCaptureMouse;
+    const bool keyboardCaptured = ImGui::GetIO().WantCaptureKeyboard;
+
+    if (!keyboardCaptured) {
+        if (m_inputMap.actionPressed(m_input, Action::SpawnBox)) {
+            spawnDynamicObject(m_cubeComp, {0.5f, 0.5f, 0.5f});
+        }
+        if (m_hasTeapot && m_inputMap.actionPressed(m_input, Action::SpawnTeapot)) {
+            spawnDynamicConvexObject(m_teapotComp, m_teapotVertices);
+        }
     }
-    if (m_hasTeapot && m_inputMap.actionPressed(m_input, Action::SpawnTeapot)) {
-        spawnDynamicConvexObject(m_teapotComp, m_teapotVertices);
+
+    if (!mouseCaptured) {
+        if (m_inputMap.actionPressed(m_input, Action::ShootSphere)) {
+            shootSphere();
+        }
+        if (m_inputMap.actionPressed(m_input, Action::KickObject)) {
+            kickObjectUnderCrosshair();
+        }
     }
 
     for (int step = 0, fixedSteps = m_time.consumeFixedSteps(); step < fixedSteps; ++step) {
@@ -328,6 +404,42 @@ bool SandboxApp::renderFrame() {
     ImGui::Text("Frame: %llu  dt: %.2f ms", static_cast<unsigned long long>(m_time.frameIndex()),
                 m_time.unscaledDelta() * 1000.f);
     ImGui::Text("Entities: %zu", m_registry.view<TransformLocal>().size());
+
+    size_t dynamicBodiesCount = 0;
+    for (const auto entity : m_registry.view<const RigidBodyComponent>()) {
+        if (m_registry.get<const RigidBodyComponent>(entity).dynamic) {
+            ++dynamicBodiesCount;
+        }
+    }
+    ImGui::Text("Dynamic Bodies: %zu", dynamicBodiesCount);
+
+    ImGui::Separator();
+    ImGui::Text("Physics Actions:");
+    if (ImGui::Button("Spawn Cube (Space)")) {
+        spawnDynamicObject(m_cubeComp, {0.5f, 0.5f, 0.5f});
+    }
+    ImGui::SameLine();
+    if (m_hasTeapot && ImGui::Button("Spawn Teapot (T)")) {
+        spawnDynamicConvexObject(m_teapotComp, m_teapotVertices);
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Shoot Cannonball (LMB / F)")) {
+        shootSphere();
+    }
+
+    if (ImGui::Button("Kick Crosshair (MMB / E)")) {
+        kickObjectUnderCrosshair();
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Clear Dynamic Objects")) {
+        clearSpawnedObjects();
+    }
+
+    ImGui::Separator();
+    ImGui::Text("Lighting & Render:");
+    if (ImGui::SliderFloat3("Sun Dir", &m_sunDirection.x, -1.f, 1.f)) {
+        m_renderer.setLightDir(m_sunDirection);
+    }
     ImGui::Checkbox("Debug draw", &m_showDebug);
     bool cullBackfaces = (m_renderer.cullMode() != VK_CULL_MODE_NONE);
     if (ImGui::Checkbox("Cull backfaces", &cullBackfaces)) {

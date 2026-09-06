@@ -744,13 +744,11 @@ void PbrRenderer::recordScene(VkCommandBuffer cmd, entt::registry& registry, Gpu
 
 
         DrawPushConstants push{};
-
         push.mvp = camera.viewProj * world.matrix;
-
         const glm::vec3 effectiveTint = meshComp.tint * glm::vec3(meshComp.baseColorFactor);
-
         push.tint = {effectiveTint, meshComp.baseColorFactor.a};
-
+        const glm::vec3 normLight = glm::length(m_lightDir) > 0.001f ? glm::normalize(m_lightDir) : glm::vec3(0.f, -1.f, 0.f);
+        push.lightDir = glm::vec4(normLight, 0.f);
         push.cameraPos = {camera.position, 1.f};
 
         const bool useTexture = meshComp.baseColorTexture != kInvalidGpuTexture;

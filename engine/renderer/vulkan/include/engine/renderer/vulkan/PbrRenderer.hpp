@@ -28,6 +28,9 @@ public:
     void setCullMode(VkCullModeFlags cullMode);
     [[nodiscard]] VkCullModeFlags cullMode() const { return m_cullMode; }
 
+    void setLightDir(const glm::vec3& dir) { m_lightDir = dir; }
+    [[nodiscard]] glm::vec3 lightDir() const { return m_lightDir; }
+
 private:
     struct DrawPushConstants {
         glm::mat4 mvp{1.f};
@@ -54,6 +57,7 @@ private:
     VkPipelineLayout m_pipelineLayout = VK_NULL_HANDLE;
     VkPipeline m_graphicsPipeline = VK_NULL_HANDLE;
     VkCullModeFlags m_cullMode = VK_CULL_MODE_NONE;
+    glm::vec3 m_lightDir{-0.35f, -1.f, -0.25f};
     bool m_ready = false;
 };
 

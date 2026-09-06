@@ -16,6 +16,8 @@ enum class Action {
     Look,
     SpawnBox,
     SpawnTeapot,
+    ShootSphere,
+    KickObject,
 };
 
 class InputMap {

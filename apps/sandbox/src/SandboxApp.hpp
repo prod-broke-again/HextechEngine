@@ -30,6 +30,9 @@ private:
     void spawnScene();
     void spawnDynamicObject(const MeshComponent& meshComp, const glm::vec3& halfExtents);
     void spawnDynamicConvexObject(const MeshComponent& meshComp, const std::vector<glm::vec3>& vertices);
+    void shootSphere();
+    void kickObjectUnderCrosshair();
+    void clearSpawnedObjects();
     void updateFrame(float deltaTime);
     [[nodiscard]] bool renderFrame();
 
@@ -52,8 +55,10 @@ private:
 
     MeshComponent m_cubeComp{};
     MeshComponent m_teapotComp{};
+    MeshComponent m_sphereComp{};
     std::vector<glm::vec3> m_teapotVertices;
     bool m_hasTeapot = false;
+    glm::vec3 m_sunDirection{-0.35f, -1.f, -0.25f};
 };
 
 } // namespace engine

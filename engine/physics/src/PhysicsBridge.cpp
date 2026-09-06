@@ -3,8 +3,12 @@
 #include "engine/core/Log.hpp"
 
 #include <Jolt/Physics/Body/BodyCreationSettings.h>
+#include <Jolt/Physics/Body/BodyLock.h>
+#include <Jolt/Physics/Collision/CastResult.h>
+#include <Jolt/Physics/Collision/RayCast.h>
 #include <Jolt/Physics/Collision/Shape/BoxShape.h>
 #include <Jolt/Physics/Collision/Shape/ConvexHullShape.h>
+#include <Jolt/Physics/Collision/Shape/SphereShape.h>
 
 namespace engine {
 
@@ -19,7 +23,8 @@ JPH::ObjectLayer objectLayer(bool dynamic) {
 }
 
 void createBodyWithShape(JoltWorld& world, entt::registry& registry, entt::entity entity,
-                         const JPH::ShapeSettings* shapeSettings, bool dynamic, float mass) {
+                         const JPH::ShapeSettings* shapeSettings, bool dynamic, float mass,
+                         const glm::vec3& initialVelocity = {0.f, 0.f, 0.f}) {
     if (!registry.all_of<TransformLocal, RigidBodyComponent>(entity)) {
         return;
     }
@@ -43,6 +48,9 @@ void createBodyWithShape(JoltWorld& world, entt::registry& registry, entt::entit
     if (dynamic) {
         settings.mOverrideMassProperties = JPH::EOverrideMassProperties::CalculateInertia;
         settings.mMassPropertiesOverride.mMass = mass;
+        if (glm::length(initialVelocity) > 0.001f) {
+            settings.mLinearVelocity = JPH::Vec3(initialVelocity.x, initialVelocity.y, initialVelocity.z);
+        }
     }
 
     JPH::BodyInterface& iface = world.bodyInterface();
@@ -69,6 +77,12 @@ void createDynamicBox(JoltWorld& world, entt::registry& registry, entt::entity e
     JPH::BoxShapeSettings shapeSettings(
         JPH::Vec3(halfExtents.x, halfExtents.y, halfExtents.z), 0.05f);
     createBodyWithShape(world, registry, entity, &shapeSettings, true, mass);
+}
+
+void createDynamicSphere(JoltWorld& world, entt::registry& registry, entt::entity entity,
+                         float radius, float mass, const glm::vec3& initialVelocity) {
+    JPH::SphereShapeSettings shapeSettings(radius);
+    createBodyWithShape(world, registry, entity, &shapeSettings, true, mass, initialVelocity);
 }
 
 void createDynamicConvexHull(JoltWorld& world, entt::registry& registry, entt::entity entity,
@@ -120,6 +134,91 @@ void destroyPhysicsBodies(entt::registry& registry, JoltWorld& world) {
             iface.RemoveBody(bodyId);
             iface.DestroyBody(bodyId);
         }
+    }
+}
+
+void clearDynamicBodies(entt::registry& registry, JoltWorld& world) {
+    auto view = registry.view<RigidBodyComponent>();
+    JPH::BodyInterface& iface = world.bodyInterface();
+    std::vector<entt::entity> toDestroy;
+
+    for (const auto entity : view) {
+        const auto& body = view.get<RigidBodyComponent>(entity);
+        if (!body.dynamic || body.bodyIndex == UINT32_MAX) {
+            continue;
+        }
+        const JPH::BodyID bodyId(body.bodyIndex);
+        if (iface.IsAdded(bodyId)) {
+            iface.RemoveBody(bodyId);
+            iface.DestroyBody(bodyId);
+        }
+        toDestroy.push_back(entity);
+    }
+
+    for (const auto entity : toDestroy) {
+        registry.destroy(entity);
+    }
+}
+
+bool raycast(JoltWorld& world, const entt::registry& registry,
+             const glm::vec3& origin, const glm::vec3& direction,
+             float maxDistance, RaycastHit& hit) {
+    hit = RaycastHit{};
+    const float len = glm::length(direction);
+    if (len < 0.0001f) {
+        return false;
+    }
+    const glm::vec3 dir = direction / len;
+    const JPH::RRayCast ray{
+        JPH::RVec3(origin.x, origin.y, origin.z),
+        JPH::Vec3(dir.x * maxDistance, dir.y * maxDistance, dir.z * maxDistance)
+    };
+
+    JPH::RayCastResult result;
+    if (!world.physics().GetNarrowPhaseQuery().CastRay(ray, result)) {
+        return false;
+    }
+
+    hit.hasHit = true;
+    hit.distance = result.mFraction * maxDistance;
+    const JPH::RVec3 hitPos = ray.GetPointOnRay(result.mFraction);
+    hit.position = {static_cast<float>(hitPos.GetX()), static_cast<float>(hitPos.GetY()),
+                    static_cast<float>(hitPos.GetZ())};
+    hit.bodyIndex = result.mBodyID.GetIndexAndSequenceNumber();
+
+    JPH::BodyLockRead lock(world.physics().GetBodyLockInterface(), result.mBodyID);
+    if (lock.Succeeded()) {
+        const JPH::Body& body = lock.GetBody();
+        const JPH::Vec3 normal = body.GetWorldSpaceSurfaceNormal(result.mSubShapeID2, hitPos);
+        hit.normal = {normal.GetX(), normal.GetY(), normal.GetZ()};
+    }
+
+    auto view = registry.view<const RigidBodyComponent>();
+    for (const auto entity : view) {
+        if (view.get<const RigidBodyComponent>(entity).bodyIndex == hit.bodyIndex) {
+            hit.entity = entity;
+            break;
+        }
+    }
+
+    return true;
+}
+
+void applyImpulse(JoltWorld& world, entt::registry& registry, entt::entity entity,
+                  const glm::vec3& impulse, const glm::vec3& point) {
+    if (!registry.valid(entity) || !registry.all_of<RigidBodyComponent>(entity)) {
+        return;
+    }
+    const auto& bodyComp = registry.get<RigidBodyComponent>(entity);
+    if (!bodyComp.dynamic || bodyComp.bodyIndex == UINT32_MAX) {
+        return;
+    }
+    const JPH::BodyID bodyId(bodyComp.bodyIndex);
+    JPH::BodyInterface& iface = world.bodyInterface();
+    if (iface.IsAdded(bodyId)) {
+        iface.ActivateBody(bodyId);
+        iface.AddImpulse(bodyId, JPH::Vec3(impulse.x, impulse.y, impulse.z),
+                         JPH::RVec3(point.x, point.y, point.z));
     }
 }
 

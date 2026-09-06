@@ -1,6 +1,8 @@
 #include "engine/assets/MeshBuilder.hpp"
 
+#include <algorithm>
 #include <array>
+#include <cmath>
 
 namespace engine {
 
@@ -54,6 +56,57 @@ MeshCpuData MeshBuilder::plane(float halfExtent, const glm::vec3& color) {
 MeshCpuData MeshBuilder::box(const glm::vec3& halfExtents, const glm::vec3& color) {
     MeshCpuData mesh;
     buildBox(mesh, halfExtents, color);
+    return mesh;
+}
+
+MeshCpuData MeshBuilder::sphere(float radius, uint32_t rings, uint32_t sectors,
+                                const glm::vec3& color) {
+    MeshCpuData mesh;
+    rings = std::max(rings, 3u);
+    sectors = std::max(sectors, 3u);
+
+    constexpr float kPi = 3.14159265358979323846f;
+    const float R = 1.f / static_cast<float>(rings);
+    const float S = 1.f / static_cast<float>(sectors);
+
+    mesh.vertices.reserve((rings + 1) * (sectors + 1));
+    mesh.indices.reserve(rings * sectors * 6);
+
+    for (uint32_t r = 0; r <= rings; ++r) {
+        const float phi = static_cast<float>(r) * kPi * R;
+        const float y = std::cos(phi);
+        const float sinPhi = std::sin(phi);
+
+        for (uint32_t s = 0; s <= sectors; ++s) {
+            const float theta = static_cast<float>(s) * 2.f * kPi * S;
+            const float x = sinPhi * std::cos(theta);
+            const float z = sinPhi * std::sin(theta);
+
+            const glm::vec3 normal{x, y, z};
+            const glm::vec3 pos = normal * radius;
+            const glm::vec2 uv{static_cast<float>(s) * S, static_cast<float>(r) * R};
+
+            mesh.vertices.push_back({pos, normal, uv, color});
+        }
+    }
+
+    for (uint32_t r = 0; r < rings; ++r) {
+        for (uint32_t s = 0; s < sectors; ++s) {
+            const uint32_t i0 = r * (sectors + 1) + s;
+            const uint32_t i1 = (r + 1) * (sectors + 1) + s;
+            const uint32_t i2 = (r + 1) * (sectors + 1) + (s + 1);
+            const uint32_t i3 = r * (sectors + 1) + (s + 1);
+
+            mesh.indices.push_back(i0);
+            mesh.indices.push_back(i1);
+            mesh.indices.push_back(i2);
+
+            mesh.indices.push_back(i0);
+            mesh.indices.push_back(i2);
+            mesh.indices.push_back(i3);
+        }
+    }
+
     return mesh;
 }
 
