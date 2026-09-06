@@ -8,9 +8,11 @@ layout(location = 3) in vec3 inColor;
 layout(location = 0) out vec3 vNormal;
 layout(location = 1) out vec2 vUv;
 layout(location = 2) out vec3 vColor;
+layout(location = 3) out vec4 vShadowCoord;
 
 layout(push_constant) uniform Push {
     mat4 mvp;
+    mat4 lightSpaceMvp;
     vec4 tint;
     vec4 lightDir;
     vec4 cameraPos;
@@ -22,4 +24,5 @@ void main() {
     vNormal = inNormal;
     vUv = inUv;
     vColor = inColor * pc.tint.rgb;
+    vShadowCoord = pc.lightSpaceMvp * vec4(inPosition, 1.0);
 }

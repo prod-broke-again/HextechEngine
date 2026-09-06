@@ -386,6 +386,8 @@ bool SandboxApp::renderFrame() {
     renderPassInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
     renderPassInfo.pClearValues = clearValues.data();
 
+    m_renderer.recordShadowPass(cmd, m_registry, *m_meshes);
+
     vkCmdBeginRenderPass(cmd, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 
     const float aspect =

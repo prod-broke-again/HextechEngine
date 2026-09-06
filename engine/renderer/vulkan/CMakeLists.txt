@@ -5,6 +5,9 @@ set(SPV_OUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/spirv")
 
 set(SPV_PBR_VERT "${SPV_OUT_DIR}/pbr.vert.spv")
 set(SPV_PBR_FRAG "${SPV_OUT_DIR}/pbr.frag.spv")
+set(SPV_SHADOW_VERT "${SPV_OUT_DIR}/shadow.vert.spv")
+set(SPV_SKY_VERT "${SPV_OUT_DIR}/sky.vert.spv")
+set(SPV_SKY_FRAG "${SPV_OUT_DIR}/sky.frag.spv")
 set(SPV_DEBUG_VERT "${SPV_OUT_DIR}/debug.vert.spv")
 set(SPV_DEBUG_FRAG "${SPV_OUT_DIR}/debug.frag.spv")
 set(SPV_FULLSCREEN_VERT "${SPV_OUT_DIR}/fullscreen.vert.spv")
@@ -23,6 +26,24 @@ if(GLSLC)
         COMMAND ${GLSLC} -fshader-stage=fragment -o ${SPV_PBR_FRAG} ${SHADER_DIR}/pbr.frag
         DEPENDS ${SHADER_DIR}/pbr.frag
         COMMENT "Compile pbr.frag"
+    )
+    add_custom_command(
+        OUTPUT ${SPV_SHADOW_VERT}
+        COMMAND ${GLSLC} -fshader-stage=vertex -o ${SPV_SHADOW_VERT} ${SHADER_DIR}/shadow.vert
+        DEPENDS ${SHADER_DIR}/shadow.vert
+        COMMENT "Compile shadow.vert"
+    )
+    add_custom_command(
+        OUTPUT ${SPV_SKY_VERT}
+        COMMAND ${GLSLC} -fshader-stage=vertex -o ${SPV_SKY_VERT} ${SHADER_DIR}/sky.vert
+        DEPENDS ${SHADER_DIR}/sky.vert
+        COMMENT "Compile sky.vert"
+    )
+    add_custom_command(
+        OUTPUT ${SPV_SKY_FRAG}
+        COMMAND ${GLSLC} -fshader-stage=fragment -o ${SPV_SKY_FRAG} ${SHADER_DIR}/sky.frag
+        DEPENDS ${SHADER_DIR}/sky.frag
+        COMMENT "Compile sky.frag"
     )
     add_custom_command(
         OUTPUT ${SPV_DEBUG_VERT}
@@ -50,6 +71,8 @@ if(GLSLC)
     )
     set(ENGINE_SHADER_SPIRV
         ${SPV_PBR_VERT} ${SPV_PBR_FRAG}
+        ${SPV_SHADOW_VERT}
+        ${SPV_SKY_VERT} ${SPV_SKY_FRAG}
         ${SPV_DEBUG_VERT} ${SPV_DEBUG_FRAG}
         ${SPV_FULLSCREEN_VERT} ${SPV_EQUIRECT_FRAG}
     )
@@ -98,6 +121,9 @@ target_compile_definitions(engine_vulkan PRIVATE
     SHADER_DIR="${SHADER_DIR}"
     SPV_PBR_VERT_PATH="${SPV_PBR_VERT}"
     SPV_PBR_FRAG_PATH="${SPV_PBR_FRAG}"
+    SPV_SHADOW_VERT_PATH="${SPV_SHADOW_VERT}"
+    SPV_SKY_VERT_PATH="${SPV_SKY_VERT}"
+    SPV_SKY_FRAG_PATH="${SPV_SKY_FRAG}"
     SPV_DEBUG_VERT_PATH="${SPV_DEBUG_VERT}"
     SPV_DEBUG_FRAG_PATH="${SPV_DEBUG_FRAG}"
     SPV_FULLSCREEN_VERT_PATH="${SPV_FULLSCREEN_VERT}"
