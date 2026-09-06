@@ -12,6 +12,8 @@ void createStaticBox(JoltWorld& world, entt::registry& registry, entt::entity en
                      const glm::vec3& halfExtents);
 void createDynamicBox(JoltWorld& world, entt::registry& registry, entt::entity entity,
                       const glm::vec3& halfExtents, float mass = 1.f);
+void createDynamicConvexHull(JoltWorld& world, entt::registry& registry, entt::entity entity,
+                             const std::vector<glm::vec3>& vertices, float mass = 1.f);
 void syncTransformsFromPhysics(entt::registry& registry, JoltWorld& world);
 void destroyPhysicsBodies(entt::registry& registry, JoltWorld& world);
 

@@ -14,6 +14,8 @@ enum class Action {
     MoveLeft,
     MoveRight,
     Look,
+    SpawnBox,
+    SpawnTeapot,
 };
 
 class InputMap {
@@ -22,6 +24,7 @@ public:
     void bindMouse(Action action, int button);
 
     [[nodiscard]] bool actionDown(const Input& input, Action action) const;
+    [[nodiscard]] bool actionPressed(const Input& input, Action action) const;
     [[nodiscard]] glm::vec2 lookDelta() const { return m_lookDelta; }
 
     void beginFrame(const Input& input);

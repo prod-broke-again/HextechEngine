@@ -59,4 +59,11 @@ bool Input::mouseButtonDown(int button) const {
     return m_current.mouseButtons[button];
 }
 
+bool Input::mouseButtonPressed(int button) const {
+    if (button < 0 || button >= 5) {
+        return false;
+    }
+    return m_current.mouseButtons[button] && !m_previous.mouseButtons[button];
+}
+
 } // namespace engine

@@ -4,6 +4,7 @@
 
 #include <Jolt/Physics/Body/BodyCreationSettings.h>
 #include <Jolt/Physics/Collision/Shape/BoxShape.h>
+#include <Jolt/Physics/Collision/Shape/ConvexHullShape.h>
 
 namespace engine {
 
@@ -17,8 +18,8 @@ JPH::ObjectLayer objectLayer(bool dynamic) {
     return dynamic ? static_cast<JPH::ObjectLayer>(1) : static_cast<JPH::ObjectLayer>(0);
 }
 
-void createBody(JoltWorld& world, entt::registry& registry, entt::entity entity,
-                const glm::vec3& halfExtents, bool dynamic, float mass) {
+void createBodyWithShape(JoltWorld& world, entt::registry& registry, entt::entity entity,
+                         const JPH::ShapeSettings* shapeSettings, bool dynamic, float mass) {
     if (!registry.all_of<TransformLocal, RigidBodyComponent>(entity)) {
         return;
     }
@@ -26,9 +27,7 @@ void createBody(JoltWorld& world, entt::registry& registry, entt::entity entity,
     const auto& transform = registry.get<TransformLocal>(entity);
     auto& body = registry.get<RigidBodyComponent>(entity);
 
-    JPH::BoxShapeSettings shapeSettings(
-        JPH::Vec3(halfExtents.x, halfExtents.y, halfExtents.z), 0.05f);
-    const JPH::ShapeSettings::ShapeResult shapeResult = shapeSettings.Create();
+    const JPH::ShapeSettings::ShapeResult shapeResult = shapeSettings->Create();
     if (shapeResult.HasError()) {
         log(LogLevel::Error, shapeResult.GetError().c_str());
         return;
@@ -60,12 +59,28 @@ void createBody(JoltWorld& world, entt::registry& registry, entt::entity entity,
 
 void createStaticBox(JoltWorld& world, entt::registry& registry, entt::entity entity,
                      const glm::vec3& halfExtents) {
-    createBody(world, registry, entity, halfExtents, false, 0.f);
+    JPH::BoxShapeSettings shapeSettings(
+        JPH::Vec3(halfExtents.x, halfExtents.y, halfExtents.z), 0.05f);
+    createBodyWithShape(world, registry, entity, &shapeSettings, false, 0.f);
 }
 
 void createDynamicBox(JoltWorld& world, entt::registry& registry, entt::entity entity,
                       const glm::vec3& halfExtents, float mass) {
-    createBody(world, registry, entity, halfExtents, true, mass);
+    JPH::BoxShapeSettings shapeSettings(
+        JPH::Vec3(halfExtents.x, halfExtents.y, halfExtents.z), 0.05f);
+    createBodyWithShape(world, registry, entity, &shapeSettings, true, mass);
+}
+
+void createDynamicConvexHull(JoltWorld& world, entt::registry& registry, entt::entity entity,
+                             const std::vector<glm::vec3>& vertices, float mass) {
+    if (vertices.empty()) return;
+    std::vector<JPH::Vec3> joltVertices;
+    joltVertices.reserve(vertices.size());
+    for (const auto& v : vertices) {
+        joltVertices.push_back(JPH::Vec3(v.x, v.y, v.z));
+    }
+    JPH::ConvexHullShapeSettings shapeSettings(joltVertices.data(), static_cast<int>(joltVertices.size()));
+    createBodyWithShape(world, registry, entity, &shapeSettings, true, mass);
 }
 
 void syncTransformsFromPhysics(entt::registry& registry, JoltWorld& world) {

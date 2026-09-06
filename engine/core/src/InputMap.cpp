@@ -16,6 +16,16 @@ bool InputMap::actionDown(const Input& input, Action action) const {
     return false;
 }
 
+bool InputMap::actionPressed(const Input& input, Action action) const {
+    if (const auto keyIt = m_keys.find(action); keyIt != m_keys.end()) {
+        return input.keyPressed(keyIt->second);
+    }
+    if (const auto btnIt = m_buttons.find(action); btnIt != m_buttons.end()) {
+        return input.mouseButtonPressed(btnIt->second);
+    }
+    return false;
+}
+
 void InputMap::beginFrame(const Input& input) {
     m_lookDelta = glm::vec2(0.f);
     if (actionDown(input, Action::Look)) {

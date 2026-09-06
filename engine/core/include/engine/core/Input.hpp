@@ -26,6 +26,7 @@ public:
     [[nodiscard]] bool keyDown(int key) const;
     [[nodiscard]] bool keyPressed(int key) const;
     [[nodiscard]] bool mouseButtonDown(int button) const;
+    [[nodiscard]] bool mouseButtonPressed(int button) const;
 
 private:
     InputSnapshot m_current{};

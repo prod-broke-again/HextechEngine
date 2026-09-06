@@ -122,6 +122,8 @@ void SandboxApp::setupInput() {
     m_inputMap.bind(Action::MoveBack, GLFW_KEY_S);
     m_inputMap.bind(Action::MoveLeft, GLFW_KEY_A);
     m_inputMap.bind(Action::MoveRight, GLFW_KEY_D);
+    m_inputMap.bind(Action::SpawnBox, GLFW_KEY_SPACE);
+    m_inputMap.bind(Action::SpawnTeapot, GLFW_KEY_T);
     m_inputMap.bindMouse(Action::Look, GLFW_MOUSE_BUTTON_RIGHT);
 }
 
@@ -174,18 +176,26 @@ void SandboxApp::spawnScene() {
     spawnGltfModel(m_registry, m_assets, *m_meshes, *m_textures,
                    "assets/armored+female+character+3d+model (3).glb", {0.f, 0.f, 0.f}, 1.8f);
 
+    m_cubeComp.mesh = m_meshes->upload(MeshBuilder::box({0.5f, 0.5f, 0.5f}, {0.8f, 0.2f, 0.2f}));
+    m_cubeComp.metallic = 0.1f;
+    m_cubeComp.roughness = 0.8f;
+
     MeshCpuData teapotData = ObjMeshLoader::loadFromFile("assets/teapot.obj");
     if (!teapotData.empty()) {
         ObjMeshLoader::normalize(teapotData, 1.0f);
-        const uint32_t teapotMesh = m_meshes->upload(teapotData);
+        m_teapotComp.mesh = m_meshes->upload(teapotData);
+        m_teapotComp.tint = {0.95f, 0.60f, 0.20f};
+        m_teapotComp.metallic = 0.85f;
+        m_teapotComp.roughness = 0.2f;
+        
+        m_teapotVertices.reserve(teapotData.vertices.size());
+        for (const auto& v : teapotData.vertices) {
+            m_teapotVertices.push_back(v.position);
+        }
+        
+        m_hasTeapot = true;
 
-        MeshComponent teapotComp{};
-        teapotComp.mesh = teapotMesh;
-        teapotComp.tint = {0.95f, 0.60f, 0.20f};
-        teapotComp.metallic = 0.85f;
-        teapotComp.roughness = 0.2f;
-
-        spawnMeshEntity(m_registry, teapotComp, {1.8f, 0.0f, 0.0f}, {1.f, 1.f, 1.f});
+        spawnMeshEntity(m_registry, m_teapotComp, {1.8f, 0.0f, 0.0f}, {1.f, 1.f, 1.f});
     }
 
     const entt::entity camera = m_registry.create();
@@ -195,9 +205,64 @@ void SandboxApp::spawnScene() {
     m_registry.emplace<FreeFlyController>(camera);
 }
 
+void SandboxApp::spawnDynamicObject(const MeshComponent& meshComp, const glm::vec3& halfExtents) {
+    auto view = m_registry.view<TransformLocal, CameraComponent>();
+    if (view.begin() == view.end()) return;
+    auto camEntity = *view.begin();
+    const auto& camTransform = view.get<TransformLocal>(camEntity);
+
+    const auto* controller = m_registry.try_get<FreeFlyController>(camEntity);
+    const float yaw = controller ? controller->yaw : 0.f;
+    const float pitch = controller ? controller->pitch : 0.f;
+
+    const glm::vec3 forward{std::cos(yaw) * std::cos(pitch), std::sin(pitch),
+                            std::sin(yaw) * std::cos(pitch)};
+
+    glm::vec3 spawnPos = camTransform.translation + (forward * 2.0f);
+
+    const entt::entity entity = m_registry.create();
+    m_registry.emplace<TransformLocal>(entity, TransformLocal{spawnPos});
+    m_registry.emplace<TransformWorld>(entity);
+    m_registry.emplace<MeshComponent>(entity, meshComp);
+    m_registry.emplace<RenderableTag>(entity);
+    m_registry.emplace<RigidBodyComponent>(entity);
+    createDynamicBox(m_physics, m_registry, entity, halfExtents, 1.0f);
+}
+
+void SandboxApp::spawnDynamicConvexObject(const MeshComponent& meshComp, const std::vector<glm::vec3>& vertices) {
+    auto view = m_registry.view<TransformLocal, CameraComponent>();
+    if (view.begin() == view.end()) return;
+    auto camEntity = *view.begin();
+    const auto& camTransform = view.get<TransformLocal>(camEntity);
+
+    const auto* controller = m_registry.try_get<FreeFlyController>(camEntity);
+    const float yaw = controller ? controller->yaw : 0.f;
+    const float pitch = controller ? controller->pitch : 0.f;
+
+    const glm::vec3 forward{std::cos(yaw) * std::cos(pitch), std::sin(pitch),
+                            std::sin(yaw) * std::cos(pitch)};
+
+    glm::vec3 spawnPos = camTransform.translation + (forward * 2.0f);
+
+    const entt::entity entity = m_registry.create();
+    m_registry.emplace<TransformLocal>(entity, TransformLocal{spawnPos});
+    m_registry.emplace<TransformWorld>(entity);
+    m_registry.emplace<MeshComponent>(entity, meshComp);
+    m_registry.emplace<RenderableTag>(entity);
+    m_registry.emplace<RigidBodyComponent>(entity);
+    createDynamicConvexHull(m_physics, m_registry, entity, vertices, 1.0f);
+}
+
 void SandboxApp::updateFrame(float deltaTime) {
     m_inputMap.beginFrame(m_input);
     updateFreeFlyCamera(m_registry, m_input, m_inputMap, deltaTime);
+
+    if (m_inputMap.actionPressed(m_input, Action::SpawnBox)) {
+        spawnDynamicObject(m_cubeComp, {0.5f, 0.5f, 0.5f});
+    }
+    if (m_hasTeapot && m_inputMap.actionPressed(m_input, Action::SpawnTeapot)) {
+        spawnDynamicConvexObject(m_teapotComp, m_teapotVertices);
+    }
 
     for (int step = 0, fixedSteps = m_time.consumeFixedSteps(); step < fixedSteps; ++step) {
         m_physics.step(m_time.fixedDelta());

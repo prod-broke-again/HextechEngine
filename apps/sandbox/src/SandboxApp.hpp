@@ -28,6 +28,8 @@ private:
     bool initEngine();
     void shutdownEngine();
     void spawnScene();
+    void spawnDynamicObject(const MeshComponent& meshComp, const glm::vec3& halfExtents);
+    void spawnDynamicConvexObject(const MeshComponent& meshComp, const std::vector<glm::vec3>& vertices);
     void updateFrame(float deltaTime);
     [[nodiscard]] bool renderFrame();
 
@@ -47,6 +49,11 @@ private:
     JoltWorld m_physics;
     AssetManager m_assets;
     bool m_showDebug = true;
+
+    MeshComponent m_cubeComp{};
+    MeshComponent m_teapotComp{};
+    std::vector<glm::vec3> m_teapotVertices;
+    bool m_hasTeapot = false;
 };
 
 } // namespace engine
