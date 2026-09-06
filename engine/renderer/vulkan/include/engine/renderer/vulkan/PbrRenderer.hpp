@@ -35,11 +35,22 @@ public:
 private:
     struct DrawPushConstants {
         glm::mat4 mvp{1.f};
-        glm::mat4 lightSpaceMvp{1.f};
+        glm::mat4 model{1.f};
         glm::vec4 tint{1.f};
-        glm::vec4 lightDir{-0.35f, -1.f, -0.25f, 0.f};
-        glm::vec4 cameraPos{0.f};
         glm::vec4 material{0.f, 0.5f, 0.f, 0.f};
+    };
+
+    struct GpuPointLight {
+        glm::vec4 positionRadius{0.f};
+        glm::vec4 colorIntensity{0.f};
+    };
+
+    struct LightUboData {
+        glm::mat4 lightSpaceMatrix{1.f};
+        glm::vec4 cameraPos{0.f};
+        glm::vec4 sunDir{0.f};
+        glm::vec4 lightParams{0.f};
+        GpuPointLight pointLights[16]{};
     };
 
     struct ShadowPushConstants {
@@ -58,6 +69,9 @@ private:
     void destroyPipeline();
     void destroyDescriptorResources();
     bool compileShaderSources();
+
+    bool createLightUboResources();
+    void destroyLightUboResources();
 
     bool createShadowResources();
     void destroyShadowResources();
@@ -103,6 +117,14 @@ private:
     VkShaderModule m_skyFragModule = VK_NULL_HANDLE;
     VkPipelineLayout m_skyPipelineLayout = VK_NULL_HANDLE;
     VkPipeline m_skyPipeline = VK_NULL_HANDLE;
+
+    // Point lights UBO (Set 2)
+    VkBuffer m_lightUboBuffer = VK_NULL_HANDLE;
+    void* m_lightUboAllocation = nullptr;
+    void* m_lightUboMapped = nullptr;
+    VkDescriptorSetLayout m_lightDescriptorSetLayout = VK_NULL_HANDLE;
+    VkDescriptorPool m_lightDescriptorPool = VK_NULL_HANDLE;
+    VkDescriptorSet m_lightDescriptorSet = VK_NULL_HANDLE;
 
     glm::vec3 m_lightDir{-0.35f, -1.f, -0.25f};
     bool m_ready = false;

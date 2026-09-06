@@ -56,6 +56,12 @@ struct RigidBodyComponent {
 
 struct StaticColliderTag {};
 
+struct PointLightComponent {
+    glm::vec3 color{1.0f, 0.9f, 0.7f};
+    float intensity = 5.0f;
+    float radius = 10.0f;
+};
+
 struct CameraState {
     glm::mat4 view{1.f};
     glm::mat4 proj{1.f};

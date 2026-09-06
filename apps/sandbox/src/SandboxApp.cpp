@@ -212,6 +212,49 @@ void SandboxApp::spawnScene() {
         spawnMeshEntity(m_registry, m_teapotComp, {1.8f, 0.0f, 0.0f}, {1.f, 1.f, 1.f});
     }
 
+    // Demo Point Lights
+    const uint32_t lightMarkerMesh = m_meshes->upload(MeshBuilder::sphere(0.12f, 16, 16, {1.f, 1.f, 1.f}));
+
+    // 1. Warm gold light near teapots
+    {
+        const entt::entity light1 = m_registry.create();
+        m_registry.emplace<TransformLocal>(light1, TransformLocal{{2.2f, 1.6f, 0.6f}});
+        m_registry.emplace<TransformWorld>(light1);
+        m_registry.emplace<PointLightComponent>(light1, PointLightComponent{
+            .color = {1.0f, 0.65f, 0.2f},
+            .intensity = 15.0f,
+            .radius = 8.0f
+        });
+        MeshComponent markerComp{};
+        markerComp.mesh = lightMarkerMesh;
+        markerComp.tint = {1.0f, 0.65f, 0.2f};
+        markerComp.metallic = 0.1f;
+        markerComp.roughness = 0.2f;
+        m_registry.emplace<MeshComponent>(light1, markerComp);
+        m_registry.emplace<RenderableTag>(light1);
+        m_demoPointLights.push_back(light1);
+    }
+
+    // 2. Cyan light near character / center
+    {
+        const entt::entity light2 = m_registry.create();
+        m_registry.emplace<TransformLocal>(light2, TransformLocal{{-2.0f, 2.0f, -0.5f}});
+        m_registry.emplace<TransformWorld>(light2);
+        m_registry.emplace<PointLightComponent>(light2, PointLightComponent{
+            .color = {0.2f, 0.75f, 1.0f},
+            .intensity = 18.0f,
+            .radius = 10.0f
+        });
+        MeshComponent markerComp{};
+        markerComp.mesh = lightMarkerMesh;
+        markerComp.tint = {0.2f, 0.75f, 1.0f};
+        markerComp.metallic = 0.1f;
+        markerComp.roughness = 0.2f;
+        m_registry.emplace<MeshComponent>(light2, markerComp);
+        m_registry.emplace<RenderableTag>(light2);
+        m_demoPointLights.push_back(light2);
+    }
+
     const entt::entity camera = m_registry.create();
     m_registry.emplace<TransformLocal>(camera, TransformLocal{{0.f, 2.f, 6.f}});
     m_registry.emplace<TransformWorld>(camera);
@@ -423,6 +466,26 @@ void SandboxApp::updateFrame(float deltaTime) {
         }
     }
 
+    if (m_animateLights) {
+        m_lightAnimTime += deltaTime;
+        if (m_demoPointLights.size() >= 2) {
+            if (m_registry.valid(m_demoPointLights[0])) {
+                if (auto* t = m_registry.try_get<TransformLocal>(m_demoPointLights[0])) {
+                    t->translation.x = 2.0f + 1.2f * std::cos(m_lightAnimTime * 1.5f);
+                    t->translation.z = 0.5f + 1.2f * std::sin(m_lightAnimTime * 1.5f);
+                    t->translation.y = 1.4f + 0.3f * std::sin(m_lightAnimTime * 2.0f);
+                }
+            }
+            if (m_registry.valid(m_demoPointLights[1])) {
+                if (auto* t = m_registry.try_get<TransformLocal>(m_demoPointLights[1])) {
+                    t->translation.x = -1.8f + 1.5f * std::cos(m_lightAnimTime * -1.2f);
+                    t->translation.z = -0.5f + 1.5f * std::sin(m_lightAnimTime * -1.2f);
+                    t->translation.y = 1.8f + 0.4f * std::cos(m_lightAnimTime * 1.8f);
+                }
+            }
+        }
+    }
+
     for (int step = 0, fixedSteps = m_time.consumeFixedSteps(); step < fixedSteps; ++step) {
         m_physics.step(m_time.fixedDelta());
     }
@@ -562,6 +625,18 @@ bool SandboxApp::renderFrame() {
             ImGui::SliderFloat("Roughness", &meshComp->roughness, 0.0f, 1.0f);
         }
 
+        if (auto* lightComp = m_registry.try_get<PointLightComponent>(m_selectedEntity)) {
+            ImGui::Separator();
+            ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.3f, 1.0f), "Point Light Component");
+            if (ImGui::ColorEdit3("Light Color", &lightComp->color.x)) {
+                if (auto* mc = m_registry.try_get<MeshComponent>(m_selectedEntity)) {
+                    mc->tint = lightComp->color;
+                }
+            }
+            ImGui::SliderFloat("Light Intensity", &lightComp->intensity, 0.0f, 50.0f);
+            ImGui::SliderFloat("Light Radius", &lightComp->radius, 0.5f, 30.0f);
+        }
+
         if (ImGui::Button("Deselect")) {
             m_selectedEntity = entt::null;
         }
@@ -579,6 +654,30 @@ bool SandboxApp::renderFrame() {
     ImGui::Text("Lighting & Render:");
     if (ImGui::SliderFloat3("Sun Dir", &m_sunDirection.x, -1.f, 1.f)) {
         m_renderer.setLightDir(m_sunDirection);
+    }
+    ImGui::Checkbox("Animate Demo Lights", &m_animateLights);
+    if (ImGui::Button("Add Light at Camera")) {
+        auto camView = m_registry.view<TransformLocal, CameraComponent>();
+        if (camView.begin() != camView.end()) {
+            const auto camEnt = *camView.begin();
+            const auto& camTransform = camView.get<TransformLocal>(camEnt);
+            const entt::entity newLight = m_registry.create();
+            m_registry.emplace<TransformLocal>(newLight, TransformLocal{camTransform.translation});
+            m_registry.emplace<TransformWorld>(newLight);
+            m_registry.emplace<PointLightComponent>(newLight, PointLightComponent{
+                .color = {1.0f, 0.9f, 0.7f},
+                .intensity = 15.0f,
+                .radius = 8.0f
+            });
+            MeshComponent markerComp{};
+            markerComp.mesh = m_sphereComp.mesh;
+            markerComp.tint = {1.0f, 0.9f, 0.7f};
+            markerComp.metallic = 0.1f;
+            markerComp.roughness = 0.2f;
+            m_registry.emplace<MeshComponent>(newLight, markerComp);
+            m_registry.emplace<RenderableTag>(newLight);
+            m_selectedEntity = newLight;
+        }
     }
     ImGui::Checkbox("Debug draw", &m_showDebug);
     bool cullBackfaces = (m_renderer.cullMode() != VK_CULL_MODE_NONE);

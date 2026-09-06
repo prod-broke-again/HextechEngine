@@ -65,6 +65,10 @@ private:
     std::vector<glm::vec3> m_teapotVertices;
     bool m_hasTeapot = false;
     glm::vec3 m_sunDirection{-0.35f, -1.f, -0.25f};
+
+    bool m_animateLights = true;
+    float m_lightAnimTime = 0.f;
+    std::vector<entt::entity> m_demoPointLights;
 };
 
 } // namespace engine

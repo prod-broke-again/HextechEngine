@@ -1,21 +1,33 @@
 #version 450
 
-layout(location = 0) in vec3 vNormal;
-layout(location = 1) in vec2 vUv;
-layout(location = 2) in vec3 vColor;
-layout(location = 3) in vec4 vShadowCoord;
+layout(location = 0) in vec3 vWorldPos;
+layout(location = 1) in vec3 vNormal;
+layout(location = 2) in vec2 vUv;
+layout(location = 3) in vec3 vColor;
+layout(location = 4) in vec4 vShadowCoord;
 
 layout(location = 0) out vec4 outColor;
 
 layout(set = 0, binding = 0) uniform sampler2D baseColorTex;
 layout(set = 1, binding = 0) uniform sampler2D shadowMap;
 
+struct GpuPointLight {
+    vec4 positionRadius; // xyz: position, w: radius
+    vec4 colorIntensity; // rgb: color, w: intensity
+};
+
+layout(set = 2, binding = 0) uniform LightUbo {
+    mat4 lightSpaceMatrix;
+    vec4 cameraPos;
+    vec4 sunDir;
+    vec4 lightParams; // x: pointLightCount
+    GpuPointLight pointLights[16];
+} ubo;
+
 layout(push_constant) uniform Push {
     mat4 mvp;
-    mat4 lightSpaceMvp;
+    mat4 model;
     vec4 tint;
-    vec4 lightDir;
-    vec4 cameraPos;
     vec4 material;
 } pc;
 
@@ -59,7 +71,7 @@ void main() {
     if (!gl_FrontFacing) {
         n = -n;
     }
-    vec3 viewDir = normalize(pc.cameraPos.xyz - vec3(0.0));
+    vec3 viewDir = normalize(ubo.cameraPos.xyz - vWorldPos);
 
     vec3 baseColor = srgbToLinear(vColor);
     if (pc.material.z > 0.5) {
@@ -68,31 +80,65 @@ void main() {
 
     const float metallic = pc.material.x;
     const float roughness = clamp(pc.material.y, 0.04, 1.0);
+    const vec3 F0 = mix(vec3(0.04), baseColor, metallic);
+    const float specPower = mix(256.0, 8.0, roughness);
 
-    const vec3 lightDir = normalize(-pc.lightDir.xyz);
+    // 1. Sun direct lighting + shadow
+    const vec3 sunLightDir = normalize(-ubo.sunDir.xyz);
+    const float ndlSun = max(dot(n, sunLightDir), 0.0);
+
+    vec3 projCoords = vShadowCoord.xyz / vShadowCoord.w;
+    float bias = max(0.002 * (1.0 - ndlSun), 0.0004);
+    float shadow = calculateShadow(projCoords, bias);
+
+    vec3 halfDirSun = normalize(sunLightDir + viewDir);
+    float specSun = pow(max(dot(n, halfDirSun), 0.0), specPower);
+    vec3 sunSpecular = F0 * specSun * (1.0 - roughness) * ndlSun * shadow;
+    vec3 sunDiffuse = baseColor * ndlSun * 0.85 * shadow;
+
+    // 2. Ambient & sky hemisphere
     const vec3 fillDir = normalize(vec3(0.35, -0.25, 0.45));
     const vec3 skyColor = vec3(0.55, 0.65, 0.85);
     const vec3 groundColor = vec3(0.18, 0.16, 0.14);
-
-    const float ndl = max(dot(n, lightDir), 0.0);
     const float ndlFill = max(dot(n, fillDir), 0.0);
     const float hemi = clamp(n.y * 0.5 + 0.5, 0.0, 1.0);
-    vec3 ambient = baseColor * mix(groundColor, skyColor, hemi) * 0.35;
+    vec3 ambient = baseColor * mix(groundColor, skyColor, hemi) * 0.35 + baseColor * (ndlFill * 0.15);
 
-    // Shadow calculation
-    vec3 projCoords = vShadowCoord.xyz / vShadowCoord.w;
-    float bias = max(0.002 * (1.0 - ndl), 0.0004);
-    float shadow = calculateShadow(projCoords, bias);
+    // 3. Dynamic Point Lights
+    vec3 pointLighting = vec3(0.0);
+    int numLights = int(ubo.lightParams.x);
+    for (int i = 0; i < numLights && i < 16; ++i) {
+        vec3 lightPos = ubo.pointLights[i].positionRadius.xyz;
+        float radius = ubo.pointLights[i].positionRadius.w;
+        vec3 lightCol = ubo.pointLights[i].colorIntensity.rgb;
+        float intensity = ubo.pointLights[i].colorIntensity.w;
 
-    vec3 diffuse = baseColor * (ndl * 0.85 * shadow + ndlFill * 0.25);
+        vec3 lightVec = lightPos - vWorldPos;
+        float dist = length(lightVec);
+        if (dist >= radius || dist < 0.0001) {
+            continue;
+        }
 
-    vec3 halfDir = normalize(lightDir + viewDir);
-    float specPower = mix(256.0, 8.0, roughness);
-    float spec = pow(max(dot(n, halfDir), 0.0), specPower);
-    vec3 specColor = mix(vec3(0.04), baseColor, metallic);
-    vec3 specular = specColor * spec * (1.0 - roughness) * ndl * shadow;
+        vec3 L = lightVec / dist;
+        float ndlL = max(dot(n, L), 0.0);
+        if (ndlL <= 0.0) {
+            continue;
+        }
 
-    vec3 color = ambient + diffuse + specular;
+        // Windowed smooth inverse-square attenuation
+        float window = clamp(1.0 - pow(dist / radius, 4.0), 0.0, 1.0);
+        float atten = (window * window) / (dist * dist + 1.0);
+        vec3 radiance = lightCol * (intensity * atten);
+
+        vec3 H = normalize(L + viewDir);
+        float spec = pow(max(dot(n, H), 0.0), specPower);
+        vec3 specL = F0 * spec * (1.0 - roughness);
+        vec3 diffL = baseColor;
+
+        pointLighting += (diffL + specL) * radiance * ndlL;
+    }
+
+    vec3 color = ambient + sunDiffuse + sunSpecular + pointLighting;
     color = acesTonemap(color * 1.05);
     outColor = vec4(linearToSrgb(color), 1.0);
 }

@@ -148,6 +148,11 @@ bool PbrRenderer::init(VulkanContext& ctx) {
         return false;
     }
 
+    if (!createLightUboResources()) {
+        log(LogLevel::Error, "PbrRenderer: light UBO resources failed");
+        return false;
+    }
+
     if (!createPipelineLayout()) {
         return false;
     }
@@ -170,6 +175,7 @@ void PbrRenderer::shutdown() {
     destroyShadowPipeline();
     destroyShadowResources();
     destroyPipeline();
+    destroyLightUboResources();
     destroyDescriptorResources();
 
     if (m_ctx) {
@@ -484,7 +490,108 @@ void PbrRenderer::destroyDescriptorResources() {
     }
 }
 
+bool PbrRenderer::createLightUboResources() {
+    VkBufferCreateInfo bufferInfo{};
+    bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+    bufferInfo.size = sizeof(LightUboData);
+    bufferInfo.usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
 
+    VmaAllocationCreateInfo allocCreateInfo{};
+    allocCreateInfo.usage = VMA_MEMORY_USAGE_CPU_TO_GPU;
+    allocCreateInfo.flags = VMA_ALLOCATION_CREATE_MAPPED_BIT;
+
+    VmaAllocation allocation = VK_NULL_HANDLE;
+    VmaAllocationInfo allocInfo{};
+    const VmaAllocator allocator = static_cast<VmaAllocator>(m_ctx->vma().get());
+    if (vmaCreateBuffer(allocator, &bufferInfo, &allocCreateInfo, &m_lightUboBuffer, &allocation, &allocInfo) != VK_SUCCESS) {
+        log(LogLevel::Error, "PbrRenderer: light UBO buffer creation failed");
+        return false;
+    }
+    m_lightUboAllocation = allocation;
+    m_lightUboMapped = allocInfo.pMappedData;
+
+    VkDescriptorSetLayoutBinding uboBinding{};
+    uboBinding.binding = 0;
+    uboBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    uboBinding.descriptorCount = 1;
+    uboBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+
+    VkDescriptorSetLayoutCreateInfo layoutInfo{};
+    layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+    layoutInfo.bindingCount = 1;
+    layoutInfo.pBindings = &uboBinding;
+
+    if (vkCreateDescriptorSetLayout(m_ctx->device(), &layoutInfo, nullptr, &m_lightDescriptorSetLayout) != VK_SUCCESS) {
+        log(LogLevel::Error, "PbrRenderer: light descriptor set layout failed");
+        return false;
+    }
+
+    VkDescriptorPoolSize poolSize{};
+    poolSize.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    poolSize.descriptorCount = 1;
+
+    VkDescriptorPoolCreateInfo poolInfo{};
+    poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+    poolInfo.maxSets = 1;
+    poolInfo.poolSizeCount = 1;
+    poolInfo.pPoolSizes = &poolSize;
+
+    if (vkCreateDescriptorPool(m_ctx->device(), &poolInfo, nullptr, &m_lightDescriptorPool) != VK_SUCCESS) {
+        log(LogLevel::Error, "PbrRenderer: light descriptor pool failed");
+        return false;
+    }
+
+    VkDescriptorSetAllocateInfo allocInfoSet{};
+    allocInfoSet.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    allocInfoSet.descriptorPool = m_lightDescriptorPool;
+    allocInfoSet.descriptorSetCount = 1;
+    allocInfoSet.pSetLayouts = &m_lightDescriptorSetLayout;
+
+    if (vkAllocateDescriptorSets(m_ctx->device(), &allocInfoSet, &m_lightDescriptorSet) != VK_SUCCESS) {
+        log(LogLevel::Error, "PbrRenderer: light descriptor set allocate failed");
+        return false;
+    }
+
+    VkDescriptorBufferInfo bufferDescInfo{};
+    bufferDescInfo.buffer = m_lightUboBuffer;
+    bufferDescInfo.offset = 0;
+    bufferDescInfo.range = sizeof(LightUboData);
+
+    VkWriteDescriptorSet write{};
+    write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    write.dstSet = m_lightDescriptorSet;
+    write.dstBinding = 0;
+    write.dstArrayElement = 0;
+    write.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    write.descriptorCount = 1;
+    write.pBufferInfo = &bufferDescInfo;
+
+    vkUpdateDescriptorSets(m_ctx->device(), 1, &write, 0, nullptr);
+    return true;
+}
+
+void PbrRenderer::destroyLightUboResources() {
+    if (!m_ctx) {
+        return;
+    }
+    VkDevice device = m_ctx->device();
+    if (m_lightDescriptorPool != VK_NULL_HANDLE) {
+        vkDestroyDescriptorPool(device, m_lightDescriptorPool, nullptr);
+        m_lightDescriptorPool = VK_NULL_HANDLE;
+    }
+    if (m_lightDescriptorSetLayout != VK_NULL_HANDLE) {
+        vkDestroyDescriptorSetLayout(device, m_lightDescriptorSetLayout, nullptr);
+        m_lightDescriptorSetLayout = VK_NULL_HANDLE;
+    }
+    if (m_lightUboBuffer != VK_NULL_HANDLE) {
+        const VmaAllocator allocator = static_cast<VmaAllocator>(m_ctx->vma().get());
+        vmaDestroyBuffer(allocator, m_lightUboBuffer, static_cast<VmaAllocation>(m_lightUboAllocation));
+        m_lightUboBuffer = VK_NULL_HANDLE;
+        m_lightUboAllocation = nullptr;
+        m_lightUboMapped = nullptr;
+    }
+    m_lightDescriptorSet = VK_NULL_HANDLE;
+}
 
 bool PbrRenderer::createPipelineLayout() {
 
@@ -496,13 +603,11 @@ bool PbrRenderer::createPipelineLayout() {
 
     pushRange.size = sizeof(DrawPushConstants);
 
-
-
-    VkDescriptorSetLayout layouts[] = {m_descriptorSetLayout, m_shadowDescriptorSetLayout};
+    VkDescriptorSetLayout layouts[] = {m_descriptorSetLayout, m_shadowDescriptorSetLayout, m_lightDescriptorSetLayout};
 
     VkPipelineLayoutCreateInfo ci{};
     ci.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    ci.setLayoutCount = 2;
+    ci.setLayoutCount = 3;
     ci.pSetLayouts = layouts;
     ci.pushConstantRangeCount = 1;
     ci.pPushConstantRanges = &pushRange;
@@ -1216,13 +1321,38 @@ void PbrRenderer::recordScene(VkCommandBuffer cmd, entt::registry& registry, Gpu
     // 1. Draw atmospheric sky
     recordSkyPass(cmd, camera);
 
-    // 2. Bind PBR pipeline and shadow map descriptor set (Set 1)
+    // 2. Bind PBR pipeline, shadow map descriptor set (Set 1), and light UBO descriptor set (Set 2)
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_graphicsPipeline);
 
     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineLayout, 1, 1,
                             &m_shadowDescriptorSet, 0, nullptr);
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineLayout, 2, 1,
+                            &m_lightDescriptorSet, 0, nullptr);
 
     const glm::mat4 lightSpaceMatrix = computeLightSpaceMatrix(computeLightViewProj(m_lightDir));
+
+    if (m_lightUboMapped) {
+        LightUboData uboData{};
+        uboData.lightSpaceMatrix = lightSpaceMatrix;
+        uboData.cameraPos = glm::vec4(camera.position, 1.f);
+        const glm::vec3 normLight = glm::length(m_lightDir) > 0.001f ? glm::normalize(m_lightDir) : glm::vec3(0.f, -1.f, 0.f);
+        uboData.sunDir = glm::vec4(normLight, 0.f);
+
+        uint32_t count = 0;
+        auto lightView = registry.view<const TransformWorld, const PointLightComponent>();
+        for (const auto entity : lightView) {
+            if (count >= 16) break;
+            const auto& tw = lightView.get<const TransformWorld>(entity);
+            const auto& plc = lightView.get<const PointLightComponent>(entity);
+
+            uboData.pointLights[count].positionRadius = glm::vec4(glm::vec3(tw.matrix[3]), plc.radius);
+            uboData.pointLights[count].colorIntensity = glm::vec4(plc.color, plc.intensity);
+            count++;
+        }
+        uboData.lightParams = glm::vec4(static_cast<float>(count), 0.f, 0.f, 0.f);
+
+        std::memcpy(m_lightUboMapped, &uboData, sizeof(LightUboData));
+    }
 
     auto view = registry.view<const TransformWorld, const MeshComponent, const RenderableTag>();
     for (const auto entity : view) {
@@ -1235,12 +1365,9 @@ void PbrRenderer::recordScene(VkCommandBuffer cmd, entt::registry& registry, Gpu
 
         DrawPushConstants push{};
         push.mvp = camera.viewProj * world.matrix;
-        push.lightSpaceMvp = lightSpaceMatrix * world.matrix;
+        push.model = world.matrix;
         const glm::vec3 effectiveTint = meshComp.tint * glm::vec3(meshComp.baseColorFactor);
         push.tint = {effectiveTint, meshComp.baseColorFactor.a};
-        const glm::vec3 normLight = glm::length(m_lightDir) > 0.001f ? glm::normalize(m_lightDir) : glm::vec3(0.f, -1.f, 0.f);
-        push.lightDir = glm::vec4(normLight, 0.f);
-        push.cameraPos = {camera.position, 1.f};
 
         const bool useTexture = meshComp.baseColorTexture != kInvalidGpuTexture;
         push.material = {meshComp.metallic, meshComp.roughness, useTexture ? 1.f : 0.f, 0.f};
