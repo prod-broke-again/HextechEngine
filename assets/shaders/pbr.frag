@@ -36,6 +36,9 @@ vec3 acesTonemap(vec3 color) {
 
 void main() {
     vec3 n = normalize(vNormal);
+    if (!gl_FrontFacing) {
+        n = -n;
+    }
     vec3 viewDir = normalize(pc.cameraPos.xyz - vec3(0.0)); // approximate view for specular
 
     vec3 baseColor = srgbToLinear(vColor);

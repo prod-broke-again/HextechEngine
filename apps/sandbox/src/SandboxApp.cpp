@@ -6,6 +6,7 @@
 #include "engine/assets/ObjMeshLoader.hpp"
 #include "engine/core/Events.hpp"
 #include "engine/core/Log.hpp"
+#include "engine/core/Path.hpp"
 #include "engine/ecs/Components.hpp"
 #include "engine/ecs/Systems.hpp"
 #include "engine/physics/PhysicsBridge.hpp"
@@ -108,7 +109,7 @@ std::string shaderPath(const char* name) {
 } // namespace
 
 void SandboxApp::loadConfig() {
-    const std::filesystem::path cfgPath = "engine_config.json";
+    const std::filesystem::path cfgPath = resolvePath("engine_config.json");
     if (std::filesystem::exists(cfgPath)) {
         m_config.loadFromFile(cfgPath);
     }
@@ -162,15 +163,30 @@ bool SandboxApp::initEngine() {
 void SandboxApp::spawnScene() {
     const uint32_t floorMesh = m_meshes->upload(MeshBuilder::plane(20.f, {0.18f, 0.22f, 0.18f}));
 
-    const entt::entity floor = spawnMeshEntity(m_registry, floorMesh, {0.f, 0.f, 0.f}, {1.f, 1.f, 1.f},
-                                               {1.f, 1.f, 1.f});
-    m_registry.get<TransformLocal>(floor).translation.y = -0.5f;
-    m_registry.emplace<StaticColliderTag>(floor);
-    m_registry.emplace<RigidBodyComponent>(floor);
-    createStaticBox(m_physics, m_registry, floor, {20.f, 0.5f, 20.f});
+    spawnMeshEntity(m_registry, floorMesh, {0.f, 0.f, 0.f}, {1.f, 1.f, 1.f}, {1.f, 1.f, 1.f});
+
+    const entt::entity floorCollider = m_registry.create();
+    m_registry.emplace<TransformLocal>(floorCollider, TransformLocal{{0.f, -0.5f, 0.f}});
+    m_registry.emplace<StaticColliderTag>(floorCollider);
+    m_registry.emplace<RigidBodyComponent>(floorCollider);
+    createStaticBox(m_physics, m_registry, floorCollider, {20.f, 0.5f, 20.f});
 
     spawnGltfModel(m_registry, m_assets, *m_meshes, *m_textures,
                    "assets/armored+female+character+3d+model (3).glb", {0.f, 0.f, 0.f}, 1.8f);
+
+    MeshCpuData teapotData = ObjMeshLoader::loadFromFile("assets/teapot.obj");
+    if (!teapotData.empty()) {
+        ObjMeshLoader::normalize(teapotData, 1.0f);
+        const uint32_t teapotMesh = m_meshes->upload(teapotData);
+
+        MeshComponent teapotComp{};
+        teapotComp.mesh = teapotMesh;
+        teapotComp.tint = {0.95f, 0.60f, 0.20f};
+        teapotComp.metallic = 0.85f;
+        teapotComp.roughness = 0.2f;
+
+        spawnMeshEntity(m_registry, teapotComp, {1.8f, 0.0f, 0.0f}, {1.f, 1.f, 1.f});
+    }
 
     const entt::entity camera = m_registry.create();
     m_registry.emplace<TransformLocal>(camera, TransformLocal{{0.f, 2.f, 6.f}});
@@ -193,11 +209,15 @@ void SandboxApp::updateFrame(float deltaTime) {
 }
 
 bool SandboxApp::renderFrame() {
+    const auto currentSize = m_platform.framebufferSize();
+    if (currentSize.x == 0 || currentSize.y == 0) {
+        return true;
+    }
+
     uint32_t imageIndex = 0;
     const VkResult acquired = m_vulkan.acquireNextImage(&imageIndex);
     if (acquired == VK_ERROR_OUT_OF_DATE_KHR) {
-        const auto size = m_platform.framebufferSize();
-        m_vulkan.handleResize(WindowResizeEvent{size.x, size.y});
+        m_vulkan.handleResize(WindowResizeEvent{currentSize.x, currentSize.y});
         ImGui_ImplVulkan_SetMinImageCount(
             static_cast<uint32_t>(std::max(2, static_cast<int>(m_vulkan.framebuffers().size()))));
         return true;
@@ -244,6 +264,10 @@ bool SandboxApp::renderFrame() {
                 m_time.unscaledDelta() * 1000.f);
     ImGui::Text("Entities: %zu", m_registry.view<TransformLocal>().size());
     ImGui::Checkbox("Debug draw", &m_showDebug);
+    bool cullBackfaces = (m_renderer.cullMode() != VK_CULL_MODE_NONE);
+    if (ImGui::Checkbox("Cull backfaces", &cullBackfaces)) {
+        m_renderer.setCullMode(cullBackfaces ? VK_CULL_MODE_BACK_BIT : VK_CULL_MODE_NONE);
+    }
     ImGui::End();
     m_imgui.endFrame(cmd);
 
@@ -253,9 +277,11 @@ bool SandboxApp::renderFrame() {
     const VkResult presentResult = m_vulkan.submitAndPresent(imageIndex);
     if (presentResult == VK_ERROR_OUT_OF_DATE_KHR || presentResult == VK_SUBOPTIMAL_KHR) {
         const auto size = m_platform.framebufferSize();
-        m_vulkan.handleResize(WindowResizeEvent{size.x, size.y});
-        ImGui_ImplVulkan_SetMinImageCount(
-            static_cast<uint32_t>(std::max(2, static_cast<int>(m_vulkan.framebuffers().size()))));
+        if (size.x > 0 && size.y > 0) {
+            m_vulkan.handleResize(WindowResizeEvent{size.x, size.y});
+            ImGui_ImplVulkan_SetMinImageCount(
+                static_cast<uint32_t>(std::max(2, static_cast<int>(m_vulkan.framebuffers().size()))));
+        }
     }
     return true;
 }

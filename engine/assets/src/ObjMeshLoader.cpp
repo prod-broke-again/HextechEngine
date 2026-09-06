@@ -1,6 +1,7 @@
 #include "engine/assets/ObjMeshLoader.hpp"
 
 #include "engine/core/Log.hpp"
+#include "engine/core/Path.hpp"
 
 #include <algorithm>
 #include <fstream>
@@ -14,11 +15,32 @@ namespace engine {
 
 namespace {
 
-uint32_t parseFaceIndex(const std::string& token) {
+bool parseFaceIndex(const std::string& token, size_t positionCount, uint32_t& outIndex) {
+    if (token.empty()) {
+        return false;
+    }
     const size_t slash = token.find('/');
     const std::string indexToken = slash == std::string::npos ? token : token.substr(0, slash);
-    const int index = std::stoi(indexToken);
-    return static_cast<uint32_t>(index > 0 ? index - 1 : 0);
+    if (indexToken.empty()) {
+        return false;
+    }
+    try {
+        const int index = std::stoi(indexToken);
+        if (index > 0) {
+            outIndex = static_cast<uint32_t>(index - 1);
+            return outIndex < positionCount;
+        }
+        if (index < 0 && positionCount > 0) {
+            const int resolved = static_cast<int>(positionCount) + index;
+            if (resolved >= 0 && static_cast<size_t>(resolved) < positionCount) {
+                outIndex = static_cast<uint32_t>(resolved);
+                return true;
+            }
+        }
+    } catch (...) {
+        return false;
+    }
+    return false;
 }
 
 void triangulateFace(const std::vector<uint32_t>& face, std::vector<uint32_t>& outIndices) {
@@ -66,10 +88,11 @@ void computeNormals(MeshCpuData& mesh) {
 } // namespace
 
 MeshCpuData ObjMeshLoader::loadFromFile(const std::filesystem::path& path) {
+    const auto resolved = resolvePath(path);
     MeshCpuData mesh;
-    std::ifstream file(path);
+    std::ifstream file(resolved);
     if (!file) {
-        log(LogLevel::Warn, "ObjMeshLoader: failed to open " + path.string());
+        log(LogLevel::Warn, "ObjMeshLoader: failed to open " + resolved.string());
         return mesh;
     }
 
@@ -107,13 +130,16 @@ MeshCpuData ObjMeshLoader::loadFromFile(const std::filesystem::path& path) {
         std::vector<uint32_t> face;
         std::string token;
         while (stream >> token) {
-            face.push_back(parseFaceIndex(token));
+            uint32_t idx = 0;
+            if (parseFaceIndex(token, positions.size(), idx)) {
+                face.push_back(idx);
+            }
         }
         triangulateFace(face, mesh.indices);
     }
 
     if (positions.empty() || mesh.indices.empty()) {
-        log(LogLevel::Warn, "ObjMeshLoader: no geometry in " + path.string());
+        log(LogLevel::Warn, "ObjMeshLoader: no geometry in " + resolved.string());
         return mesh;
     }
 
@@ -126,7 +152,7 @@ MeshCpuData ObjMeshLoader::loadFromFile(const std::filesystem::path& path) {
     }
 
     computeNormals(mesh);
-    log(LogLevel::Info, "ObjMeshLoader: loaded " + path.filename().string() + " (" +
+    log(LogLevel::Info, "ObjMeshLoader: loaded " + resolved.filename().string() + " (" +
                            std::to_string(mesh.vertices.size()) + " verts, " +
                            std::to_string(mesh.indices.size() / 3) + " tris)");
     return mesh;

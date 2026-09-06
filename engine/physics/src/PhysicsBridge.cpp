@@ -48,7 +48,11 @@ void createBody(JoltWorld& world, entt::registry& registry, entt::entity entity,
 
     JPH::BodyInterface& iface = world.bodyInterface();
     const JPH::BodyID bodyId = iface.CreateAndAddBody(settings, JPH::EActivation::Activate);
-    body.bodyIndex = bodyId.GetIndex();
+    if (bodyId.IsInvalid()) {
+        log(LogLevel::Error, "PhysicsBridge: CreateAndAddBody failed");
+        return;
+    }
+    body.bodyIndex = bodyId.GetIndexAndSequenceNumber();
     body.dynamic = dynamic;
 }
 

@@ -27,7 +27,12 @@ void Input::setMouseButton(int button, bool pressed) {
 
 void Input::setMousePosition(float x, float y) {
     const glm::vec2 next{x, y};
-    m_current.mouseDelta = next - m_current.mousePosition;
+    if (m_firstMouseMove) {
+        m_current.mousePosition = next;
+        m_firstMouseMove = false;
+        return;
+    }
+    m_current.mouseDelta += next - m_current.mousePosition;
     m_current.mousePosition = next;
 }
 

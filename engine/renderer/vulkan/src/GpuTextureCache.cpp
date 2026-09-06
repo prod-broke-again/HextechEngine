@@ -8,6 +8,23 @@
 
 namespace engine {
 
+namespace {
+
+void freeTextureResources(VulkanContext& ctx, GpuTexture& texture) {
+    const VmaAllocator allocator = static_cast<VmaAllocator>(ctx.vma().get());
+    if (texture.view != VK_NULL_HANDLE) {
+        vkDestroyImageView(ctx.device(), texture.view, nullptr);
+        texture.view = VK_NULL_HANDLE;
+    }
+    if (texture.image != VK_NULL_HANDLE) {
+        vmaDestroyImage(allocator, texture.image, static_cast<VmaAllocation>(texture.allocation));
+        texture.image = VK_NULL_HANDLE;
+        texture.allocation = nullptr;
+    }
+}
+
+} // namespace
+
 GpuTextureCache::GpuTextureCache(VulkanContext& ctx) : m_ctx(&ctx) {}
 
 bool GpuTextureCache::init(VkDescriptorSetLayout descriptorSetLayout, VkDescriptorPool descriptorPool,
@@ -24,14 +41,8 @@ void GpuTextureCache::shutdown() {
         return;
     }
 
-    const VmaAllocator allocator = static_cast<VmaAllocator>(m_ctx->vma().get());
     for (GpuTexture& texture : m_textures) {
-        if (texture.view != VK_NULL_HANDLE) {
-            vkDestroyImageView(m_ctx->device(), texture.view, nullptr);
-        }
-        if (texture.image != VK_NULL_HANDLE) {
-            vmaDestroyImage(allocator, texture.image, static_cast<VmaAllocation>(texture.allocation));
-        }
+        freeTextureResources(*m_ctx, texture);
     }
     m_textures.clear();
     m_defaultDescriptorSet = VK_NULL_HANDLE;
@@ -178,6 +189,7 @@ bool GpuTextureCache::createDefaultTexture() {
     allocInfo.descriptorSetCount = 1;
     allocInfo.pSetLayouts = &m_descriptorSetLayout;
     if (vkAllocateDescriptorSets(m_ctx->device(), &allocInfo, &texture.descriptorSet) != VK_SUCCESS) {
+        freeTextureResources(*m_ctx, texture);
         return false;
     }
 
@@ -218,6 +230,7 @@ GpuTextureId GpuTextureCache::upload(const LoadedTextureCpu& texture) {
     allocInfo.pSetLayouts = &m_descriptorSetLayout;
     if (vkAllocateDescriptorSets(m_ctx->device(), &allocInfo, &gpu.descriptorSet) != VK_SUCCESS) {
         log(LogLevel::Error, "GpuTextureCache: descriptor set allocation failed");
+        freeTextureResources(*m_ctx, gpu);
         return kInvalidGpuTexture;
     }
 

@@ -15,56 +15,12 @@ namespace {
 glm::vec3 readVec3(const float* data) { return {data[0], data[1], data[2]}; }
 
 void readIndices(const cgltf_accessor* indexAcc, uint32_t baseVertex, std::vector<uint32_t>& outIndices) {
-    if (!indexAcc || !indexAcc->buffer_view) {
+    if (!indexAcc) {
         return;
     }
-
-    const uint8_t* base = cgltf_buffer_view_data(indexAcc->buffer_view);
-    if (!base) {
-        log(LogLevel::Warn, "GltfMeshLoader: index buffer is unavailable");
-        return;
-    }
-
-    cgltf_size componentSize = 0;
-    switch (indexAcc->component_type) {
-    case cgltf_component_type_r_8u:
-        componentSize = 1;
-        break;
-    case cgltf_component_type_r_16u:
-        componentSize = 2;
-        break;
-    case cgltf_component_type_r_32u:
-        componentSize = 4;
-        break;
-    default:
-        break;
-    }
-
-    if (componentSize == 0) {
-        outIndices.reserve(outIndices.size() + static_cast<size_t>(indexAcc->count));
-        for (cgltf_size i = 0; i < indexAcc->count; ++i) {
-            outIndices.push_back(baseVertex + static_cast<uint32_t>(cgltf_accessor_read_index(indexAcc, i)));
-        }
-        return;
-    }
-
-    const cgltf_size stride = indexAcc->stride != 0 ? indexAcc->stride : componentSize;
-    const uint8_t* indices = base + indexAcc->offset;
-
     outIndices.reserve(outIndices.size() + static_cast<size_t>(indexAcc->count));
     for (cgltf_size i = 0; i < indexAcc->count; ++i) {
-        const uint8_t* element = indices + i * stride;
-        uint32_t index = 0;
-        if (componentSize == 1) {
-            index = element[0];
-        } else if (componentSize == 2) {
-            uint16_t value = 0;
-            std::memcpy(&value, element, sizeof(value));
-            index = value;
-        } else {
-            std::memcpy(&index, element, sizeof(index));
-        }
-        outIndices.push_back(baseVertex + index);
+        outIndices.push_back(baseVertex + static_cast<uint32_t>(cgltf_accessor_read_index(indexAcc, i)));
     }
 }
 

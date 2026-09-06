@@ -30,6 +30,7 @@ public:
 private:
     InputSnapshot m_current{};
     InputSnapshot m_previous{};
+    bool m_firstMouseMove = true;
 };
 
 } // namespace engine

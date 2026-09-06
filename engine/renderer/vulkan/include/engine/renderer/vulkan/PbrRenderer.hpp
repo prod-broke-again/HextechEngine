@@ -25,6 +25,9 @@ public:
 
     [[nodiscard]] bool ready() const { return m_ready; }
 
+    void setCullMode(VkCullModeFlags cullMode);
+    [[nodiscard]] VkCullModeFlags cullMode() const { return m_cullMode; }
+
 private:
     struct DrawPushConstants {
         glm::mat4 mvp{1.f};
@@ -50,6 +53,7 @@ private:
     VkSampler m_sampler = VK_NULL_HANDLE;
     VkPipelineLayout m_pipelineLayout = VK_NULL_HANDLE;
     VkPipeline m_graphicsPipeline = VK_NULL_HANDLE;
+    VkCullModeFlags m_cullMode = VK_CULL_MODE_NONE;
     bool m_ready = false;
 };
 

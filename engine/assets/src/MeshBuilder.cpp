@@ -47,7 +47,7 @@ MeshCpuData MeshBuilder::plane(float halfExtent, const glm::vec3& color) {
         {{h, 0.f, h}, {0.f, 1.f, 0.f}, glm::vec2{1.f, 1.f}, color},
         {{-h, 0.f, h}, {0.f, 1.f, 0.f}, glm::vec2{0.f, 1.f}, color},
     };
-    mesh.indices = {0, 1, 2, 2, 3, 0};
+    mesh.indices = {0, 2, 1, 0, 3, 2};
     return mesh;
 }
 

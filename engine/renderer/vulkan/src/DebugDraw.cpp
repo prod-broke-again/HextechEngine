@@ -78,6 +78,17 @@ void DebugDraw::shutdown() {
         vkDestroyShaderModule(device, m_fragModule, nullptr);
         m_fragModule = VK_NULL_HANDLE;
     }
+
+    const VmaAllocator allocator = static_cast<VmaAllocator>(m_ctx->vma().get());
+    for (auto& fb : m_frameBuffers) {
+        if (fb.buffer != VK_NULL_HANDLE) {
+            vmaDestroyBuffer(allocator, fb.buffer, static_cast<VmaAllocation>(fb.allocation));
+            fb.buffer = VK_NULL_HANDLE;
+            fb.allocation = nullptr;
+            fb.capacity = 0;
+        }
+    }
+
     m_ctx = nullptr;
 }
 
@@ -205,23 +216,43 @@ void DebugDraw::record(VkCommandBuffer cmd, entt::registry& registry, const Came
         return;
     }
 
-    // Per-frame debug geometry upload (small enough for sandbox).
+    const uint32_t frameIndex = m_ctx->currentFrame() % static_cast<uint32_t>(m_frameBuffers.size());
+    FrameBuffer& fb = m_frameBuffers[frameIndex];
     const VmaAllocator allocator = static_cast<VmaAllocator>(m_ctx->vma().get());
-    VmaAllocationCreateInfo stagingInfo{};
-    stagingInfo.usage = VMA_MEMORY_USAGE_CPU_TO_GPU;
-    stagingInfo.flags = VMA_ALLOCATION_CREATE_MAPPED_BIT;
 
     const VkDeviceSize bytes = static_cast<VkDeviceSize>(lines.size() * sizeof(MeshVertex));
-    VkBufferCreateInfo bufferInfo{};
-    bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-    bufferInfo.size = bytes;
-    bufferInfo.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
 
-    VkBuffer buffer = VK_NULL_HANDLE;
-    VmaAllocation allocation = VK_NULL_HANDLE;
+    if (bytes > fb.capacity) {
+        if (fb.buffer != VK_NULL_HANDLE) {
+            vmaDestroyBuffer(allocator, fb.buffer, static_cast<VmaAllocation>(fb.allocation));
+            fb.buffer = VK_NULL_HANDLE;
+            fb.allocation = nullptr;
+            fb.capacity = 0;
+        }
+
+        const VkDeviceSize newCapacity = std::max(bytes, static_cast<VkDeviceSize>(65536));
+        VkBufferCreateInfo bufferInfo{};
+        bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+        bufferInfo.size = newCapacity;
+        bufferInfo.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
+
+        VmaAllocationCreateInfo stagingInfo{};
+        stagingInfo.usage = VMA_MEMORY_USAGE_CPU_TO_GPU;
+        stagingInfo.flags = VMA_ALLOCATION_CREATE_MAPPED_BIT;
+
+        VmaAllocation allocation = VK_NULL_HANDLE;
+        VmaAllocationInfo allocInfo{};
+        if (vmaCreateBuffer(allocator, &bufferInfo, &stagingInfo, &fb.buffer, &allocation, &allocInfo) !=
+            VK_SUCCESS) {
+            return;
+        }
+        fb.allocation = allocation;
+        fb.capacity = newCapacity;
+    }
+
     VmaAllocationInfo allocInfo{};
-    if (vmaCreateBuffer(allocator, &bufferInfo, &stagingInfo, &buffer, &allocation, &allocInfo) !=
-        VK_SUCCESS) {
+    vmaGetAllocationInfo(allocator, static_cast<VmaAllocation>(fb.allocation), &allocInfo);
+    if (!allocInfo.pMappedData) {
         return;
     }
     std::memcpy(allocInfo.pMappedData, lines.data(), static_cast<size_t>(bytes));
@@ -239,10 +270,8 @@ void DebugDraw::record(VkCommandBuffer cmd, entt::registry& registry, const Came
     vkCmdPushConstants(cmd, m_layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(LinePush), &push);
 
     const VkDeviceSize offset = 0;
-    vkCmdBindVertexBuffers(cmd, 0, 1, &buffer, &offset);
+    vkCmdBindVertexBuffers(cmd, 0, 1, &fb.buffer, &offset);
     vkCmdDraw(cmd, static_cast<uint32_t>(lines.size()), 1, 0, 0);
-
-    vmaDestroyBuffer(allocator, buffer, allocation);
 }
 
 } // namespace engine

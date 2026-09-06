@@ -6,6 +6,12 @@ add_library(engine_core STATIC
     src/Events.cpp
     src/Config.cpp
     src/Time.cpp
+    src/Path.cpp
+)
+
+target_compile_definitions(engine_core PUBLIC
+    ENGINE_ROOT_DIR="${CMAKE_SOURCE_DIR}"
+    ENGINE_ASSET_DIR="${CMAKE_SOURCE_DIR}/assets"
 )
 
 target_include_directories(engine_core

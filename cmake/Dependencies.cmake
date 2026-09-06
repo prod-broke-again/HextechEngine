@@ -2,6 +2,18 @@ include(FetchContent)
 
 if(DEFINED ENV{VULKAN_SDK})
     list(APPEND CMAKE_PREFIX_PATH "$ENV{VULKAN_SDK}")
+else()
+    file(GLOB VULKAN_CANDIDATES
+        "E:/VulkanSDK/*"
+        "C:/VulkanSDK/*"
+        "D:/VulkanSDK/*"
+    )
+    if(VULKAN_CANDIDATES)
+        list(REVERSE VULKAN_CANDIDATES)
+        list(GET VULKAN_CANDIDATES 0 LATEST_VULKAN_SDK)
+        set(ENV{VULKAN_SDK} "${LATEST_VULKAN_SDK}")
+        list(APPEND CMAKE_PREFIX_PATH "${LATEST_VULKAN_SDK}")
+    endif()
 endif()
 
 find_package(Vulkan REQUIRED)

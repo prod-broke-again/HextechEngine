@@ -1,6 +1,7 @@
 #include "engine/assets/AssetManager.hpp"
 
 #include "engine/core/Log.hpp"
+#include "engine/core/Path.hpp"
 
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
@@ -83,16 +84,17 @@ std::shared_ptr<LoadedTextureCpu> loadTextureFile(const std::filesystem::path& p
 } // namespace
 
 AssetManager::GltfPtr AssetManager::getOrLoadGltf(const std::filesystem::path& path) {
-    const std::string key = path.generic_string();
+    const auto resolved = resolvePath(path);
+    const std::string key = resolved.generic_string();
     std::lock_guard lock(m_mutex);
     if (auto it = m_gltf.find(key); it != m_gltf.end()) {
         return it->second;
     }
-    if (!std::filesystem::exists(path)) {
-        log(LogLevel::Warn, "getOrLoadGltf: file not found " + path.string());
+    if (!std::filesystem::exists(resolved)) {
+        log(LogLevel::Warn, "getOrLoadGltf: file not found " + resolved.string());
         return nullptr;
     }
-    auto loaded = parseGltfFile(path);
+    auto loaded = parseGltfFile(resolved);
     if (!loaded) {
         return nullptr;
     }
@@ -101,12 +103,13 @@ AssetManager::GltfPtr AssetManager::getOrLoadGltf(const std::filesystem::path& p
 }
 
 AssetManager::TexturePtr AssetManager::getOrLoadTexture(const std::filesystem::path& path, bool hdr) {
-    const std::string key = path.generic_string();
+    const auto resolved = resolvePath(path);
+    const std::string key = resolved.generic_string();
     std::lock_guard lock(m_mutex);
     if (auto it = m_textures.find(key); it != m_textures.end()) {
         return it->second;
     }
-    auto loaded = loadTextureFile(path, hdr);
+    auto loaded = loadTextureFile(resolved, hdr);
     if (!loaded) {
         return nullptr;
     }
@@ -115,7 +118,8 @@ AssetManager::TexturePtr AssetManager::getOrLoadTexture(const std::filesystem::p
 }
 
 void AssetManager::unload(const std::filesystem::path& path) {
-    const std::string key = path.generic_string();
+    const auto resolved = resolvePath(path);
+    const std::string key = resolved.generic_string();
     std::lock_guard lock(m_mutex);
     m_gltf.erase(key);
     m_textures.erase(key);

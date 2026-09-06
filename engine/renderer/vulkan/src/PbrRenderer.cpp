@@ -561,7 +561,7 @@ bool PbrRenderer::createGraphicsPipeline() {
 
     raster.lineWidth = 1.f;
 
-    raster.cullMode = VK_CULL_MODE_BACK_BIT;
+    raster.cullMode = m_cullMode;
 
     raster.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
 
@@ -797,7 +797,19 @@ void PbrRenderer::recordScene(VkCommandBuffer cmd, entt::registry& registry, Gpu
 
 }
 
-
+void PbrRenderer::setCullMode(VkCullModeFlags cullMode) {
+    if (m_cullMode == cullMode) {
+        return;
+    }
+    m_cullMode = cullMode;
+    if (m_ctx && m_ready) {
+        vkDeviceWaitIdle(m_ctx->device());
+        destroyPipeline();
+        if (!createPipelineLayout() || !createGraphicsPipeline()) {
+            log(LogLevel::Error, "PbrRenderer: setCullMode pipeline recreation failed");
+        }
+    }
+}
 
 } // namespace engine
 
