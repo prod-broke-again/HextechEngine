@@ -32,3 +32,9 @@ target_compile_definitions(sandbox PRIVATE
 )
 
 engine_apply_compiler_options(sandbox)
+
+add_custom_command(TARGET sandbox POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${CMAKE_SOURCE_DIR}/assets/sounds"
+        "$<TARGET_FILE_DIR:sandbox>/assets/sounds"
+)

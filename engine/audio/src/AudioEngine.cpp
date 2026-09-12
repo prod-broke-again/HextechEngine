@@ -1,6 +1,7 @@
 #include "engine/audio/AudioEngine.hpp"
 
 #include "engine/core/Log.hpp"
+#include "engine/core/Path.hpp"
 
 #include <miniaudio.h>
 
@@ -65,18 +66,20 @@ struct AudioEngine::Impl {
     }
 
     void play2D(const std::string& soundPath, float volume, float pitch) {
-        if (!std::filesystem::exists(soundPath)) {
+        const auto resolved = resolvePath(soundPath);
+        if (!std::filesystem::exists(resolved)) {
             log(LogLevel::Warn, "AudioEngine: sound file not found: " + soundPath);
             return;
         }
         (void)volume;
         (void)pitch;
-        ma_engine_play_sound(&engine, soundPath.c_str(), nullptr);
+        ma_engine_play_sound(&engine, resolved.string().c_str(), nullptr);
     }
 
     void play3D(const std::string& soundPath, const glm::vec3& position, float volume,
                 float minDistance, float maxDistance) {
-        if (!std::filesystem::exists(soundPath)) {
+        const auto resolved = resolvePath(soundPath);
+        if (!std::filesystem::exists(resolved)) {
             log(LogLevel::Warn, "AudioEngine: sound file not found: " + soundPath);
             return;
         }
@@ -102,7 +105,7 @@ struct AudioEngine::Impl {
             slot->inUse = false;
         }
 
-        ma_result result = ma_sound_init_from_file(&engine, soundPath.c_str(),
+        ma_result result = ma_sound_init_from_file(&engine, resolved.string().c_str(),
                                                    MA_SOUND_FLAG_DECODE, nullptr, nullptr, &slot->sound);
         if (result != MA_SUCCESS) {
             log(LogLevel::Warn, "AudioEngine: failed to load 3D sound: " + soundPath);
