@@ -69,6 +69,15 @@ private:
     bool m_animateLights = true;
     float m_lightAnimTime = 0.f;
     std::vector<entt::entity> m_demoPointLights;
+
+    MeshCpuData m_teapotCpuData;
+    char m_sceneFilename[128] = "sandbox_scene.json";
+    std::string m_sceneStatusMessage;
+    float m_sceneStatusTimer = 0.f;
+
+    void saveScene(const std::string& filename);
+    void loadScene(const std::string& filename);
+    void resetScene();
 };
 
 } // namespace engine

@@ -8,6 +8,7 @@
 #include "engine/core/Log.hpp"
 #include "engine/core/Path.hpp"
 #include "engine/ecs/Components.hpp"
+#include "engine/ecs/SceneSerializer.hpp"
 #include "engine/ecs/Systems.hpp"
 #include "engine/physics/PhysicsBridge.hpp"
 #include "engine/renderer/vulkan/ShaderHotReload.hpp"
@@ -172,14 +173,27 @@ bool SandboxApp::initEngine() {
 void SandboxApp::spawnScene() {
     const uint32_t floorMesh = m_meshes->upload(MeshBuilder::plane(20.f, {0.18f, 0.22f, 0.18f}));
 
-    spawnMeshEntity(m_registry, floorMesh, {0.f, 0.f, 0.f}, {1.f, 1.f, 1.f}, {1.f, 1.f, 1.f});
+    const entt::entity floorVisual = spawnMeshEntity(m_registry, floorMesh, {0.f, 0.f, 0.f}, {1.f, 1.f, 1.f}, {1.f, 1.f, 1.f});
+    m_registry.emplace<TagComponent>(floorVisual, TagComponent{"FloorVisual"});
+    m_registry.emplace<MeshGeometryComponent>(floorVisual, MeshGeometryComponent{MeshGeometryType::Plane, "", {20.f, 0.f, 0.f}});
 
     const entt::entity floorCollider = m_registry.create();
+    m_registry.emplace<TagComponent>(floorCollider, TagComponent{"FloorCollider"});
     m_registry.emplace<TransformLocal>(floorCollider, TransformLocal{{0.f, -0.5f, 0.f}});
     m_registry.emplace<StaticColliderTag>(floorCollider);
     m_registry.emplace<RigidBodyComponent>(floorCollider);
+    m_registry.emplace<ColliderComponent>(floorCollider, ColliderComponent{ColliderShapeType::Box, {20.f, 0.5f, 20.f}, 0.f, true, 0.f});
     createStaticBox(m_physics, m_registry, floorCollider, {20.f, 0.5f, 20.f});
 
+    const entt::entity charAnchor = m_registry.create();
+    m_registry.emplace<TagComponent>(charAnchor, TagComponent{"CharacterModel"});
+    m_registry.emplace<TransformLocal>(charAnchor, TransformLocal{{0.f, 0.f, 0.f}});
+    m_registry.emplace<TransformWorld>(charAnchor);
+    m_registry.emplace<MeshGeometryComponent>(charAnchor, MeshGeometryComponent{
+        MeshGeometryType::Model,
+        "assets/armored+female+character+3d+model (3).glb",
+        {1.8f, 0.f, 0.f}
+    });
     spawnGltfModel(m_registry, m_assets, *m_meshes, *m_textures,
                    "assets/armored+female+character+3d+model (3).glb", {0.f, 0.f, 0.f}, 1.8f);
 
@@ -197,11 +211,13 @@ void SandboxApp::spawnScene() {
     MeshCpuData teapotData = ObjMeshLoader::loadFromFile("assets/teapot.obj");
     if (!teapotData.empty()) {
         ObjMeshLoader::normalize(teapotData, 1.0f);
+        m_teapotCpuData = teapotData;
         m_teapotComp.mesh = m_meshes->upload(teapotData);
         m_teapotComp.tint = {0.95f, 0.60f, 0.20f};
         m_teapotComp.metallic = 0.85f;
         m_teapotComp.roughness = 0.2f;
         
+        m_teapotVertices.clear();
         m_teapotVertices.reserve(teapotData.vertices.size());
         for (const auto& v : teapotData.vertices) {
             m_teapotVertices.push_back(v.position);
@@ -209,7 +225,10 @@ void SandboxApp::spawnScene() {
         
         m_hasTeapot = true;
 
-        spawnMeshEntity(m_registry, m_teapotComp, {1.8f, 0.0f, 0.0f}, {1.f, 1.f, 1.f});
+        const entt::entity teapotEnt = spawnMeshEntity(m_registry, m_teapotComp, {1.8f, 0.0f, 0.0f}, {1.f, 1.f, 1.f});
+        m_registry.emplace<TagComponent>(teapotEnt, TagComponent{"Teapot"});
+        m_registry.emplace<MeshGeometryComponent>(teapotEnt, MeshGeometryComponent{MeshGeometryType::Teapot, "assets/teapot.obj", {1.f, 0.f, 0.f}});
+        m_registry.emplace<ColliderComponent>(teapotEnt, ColliderComponent{ColliderShapeType::ConvexHull, {0.5f, 0.5f, 0.5f}, 0.5f, false, 1.0f});
     }
 
     // Demo Point Lights
@@ -218,6 +237,7 @@ void SandboxApp::spawnScene() {
     // 1. Warm gold light near teapots
     {
         const entt::entity light1 = m_registry.create();
+        m_registry.emplace<TagComponent>(light1, TagComponent{"WarmPointLight"});
         m_registry.emplace<TransformLocal>(light1, TransformLocal{{2.2f, 1.6f, 0.6f}});
         m_registry.emplace<TransformWorld>(light1);
         m_registry.emplace<PointLightComponent>(light1, PointLightComponent{
@@ -231,6 +251,7 @@ void SandboxApp::spawnScene() {
         markerComp.metallic = 0.1f;
         markerComp.roughness = 0.2f;
         m_registry.emplace<MeshComponent>(light1, markerComp);
+        m_registry.emplace<MeshGeometryComponent>(light1, MeshGeometryComponent{MeshGeometryType::Sphere, "", {0.12f, 0.f, 0.f}});
         m_registry.emplace<RenderableTag>(light1);
         m_demoPointLights.push_back(light1);
     }
@@ -238,6 +259,7 @@ void SandboxApp::spawnScene() {
     // 2. Cyan light near character / center
     {
         const entt::entity light2 = m_registry.create();
+        m_registry.emplace<TagComponent>(light2, TagComponent{"CyanPointLight"});
         m_registry.emplace<TransformLocal>(light2, TransformLocal{{-2.0f, 2.0f, -0.5f}});
         m_registry.emplace<TransformWorld>(light2);
         m_registry.emplace<PointLightComponent>(light2, PointLightComponent{
@@ -251,11 +273,13 @@ void SandboxApp::spawnScene() {
         markerComp.metallic = 0.1f;
         markerComp.roughness = 0.2f;
         m_registry.emplace<MeshComponent>(light2, markerComp);
+        m_registry.emplace<MeshGeometryComponent>(light2, MeshGeometryComponent{MeshGeometryType::Sphere, "", {0.12f, 0.f, 0.f}});
         m_registry.emplace<RenderableTag>(light2);
         m_demoPointLights.push_back(light2);
     }
 
     const entt::entity camera = m_registry.create();
+    m_registry.emplace<TagComponent>(camera, TagComponent{"MainCamera"});
     m_registry.emplace<TransformLocal>(camera, TransformLocal{{0.f, 2.f, 6.f}});
     m_registry.emplace<TransformWorld>(camera);
     m_registry.emplace<CameraComponent>(camera);
@@ -319,11 +343,14 @@ void SandboxApp::spawnDynamicObject(const MeshComponent& meshComp, const glm::ve
     glm::vec3 spawnPos = camTransform.translation + (forward * 2.0f);
 
     const entt::entity entity = m_registry.create();
+    m_registry.emplace<TagComponent>(entity, TagComponent{"DynamicCube"});
     m_registry.emplace<TransformLocal>(entity, TransformLocal{spawnPos});
     m_registry.emplace<TransformWorld>(entity);
     m_registry.emplace<MeshComponent>(entity, meshComp);
+    m_registry.emplace<MeshGeometryComponent>(entity, MeshGeometryComponent{MeshGeometryType::Box, "", halfExtents});
     m_registry.emplace<RenderableTag>(entity);
     m_registry.emplace<RigidBodyComponent>(entity);
+    m_registry.emplace<ColliderComponent>(entity, ColliderComponent{ColliderShapeType::Box, halfExtents, 0.5f, false, 1.0f});
     createDynamicBox(m_physics, m_registry, entity, halfExtents, 1.0f);
 }
 
@@ -343,11 +370,14 @@ void SandboxApp::spawnDynamicConvexObject(const MeshComponent& meshComp, const s
     glm::vec3 spawnPos = camTransform.translation + (forward * 2.0f);
 
     const entt::entity entity = m_registry.create();
+    m_registry.emplace<TagComponent>(entity, TagComponent{"DynamicTeapot"});
     m_registry.emplace<TransformLocal>(entity, TransformLocal{spawnPos});
     m_registry.emplace<TransformWorld>(entity);
     m_registry.emplace<MeshComponent>(entity, meshComp);
+    m_registry.emplace<MeshGeometryComponent>(entity, MeshGeometryComponent{MeshGeometryType::Teapot, "assets/teapot.obj", {1.f, 0.f, 0.f}});
     m_registry.emplace<RenderableTag>(entity);
     m_registry.emplace<RigidBodyComponent>(entity);
+    m_registry.emplace<ColliderComponent>(entity, ColliderComponent{ColliderShapeType::ConvexHull, {0.5f, 0.5f, 0.5f}, 0.5f, false, 1.0f});
     createDynamicConvexHull(m_physics, m_registry, entity, vertices, 1.0f);
 }
 
@@ -368,11 +398,14 @@ void SandboxApp::shootSphere() {
     const glm::vec3 velocity = forward * 30.f;
 
     const entt::entity entity = m_registry.create();
+    m_registry.emplace<TagComponent>(entity, TagComponent{"Cannonball"});
     m_registry.emplace<TransformLocal>(entity, TransformLocal{spawnPos});
     m_registry.emplace<TransformWorld>(entity);
     m_registry.emplace<MeshComponent>(entity, m_sphereComp);
+    m_registry.emplace<MeshGeometryComponent>(entity, MeshGeometryComponent{MeshGeometryType::Sphere, "", {0.4f, 0.f, 0.f}});
     m_registry.emplace<RenderableTag>(entity);
     m_registry.emplace<RigidBodyComponent>(entity);
+    m_registry.emplace<ColliderComponent>(entity, ColliderComponent{ColliderShapeType::Sphere, {0.4f, 0.4f, 0.4f}, 0.4f, false, 4.0f});
     createDynamicSphere(m_physics, m_registry, entity, 0.4f, 4.0f, velocity);
 }
 
@@ -493,6 +526,13 @@ void SandboxApp::updateFrame(float deltaTime) {
     syncTransformsFromPhysics(m_registry, m_physics);
     updateTransforms(m_registry);
     m_renderer.tryReloadShaders();
+
+    if (m_sceneStatusTimer > 0.f) {
+        m_sceneStatusTimer -= deltaTime;
+        if (m_sceneStatusTimer <= 0.f) {
+            m_sceneStatusMessage.clear();
+        }
+    }
 }
 
 bool SandboxApp::renderFrame() {
@@ -614,6 +654,14 @@ bool SandboxApp::renderFrame() {
     if (m_selectedEntity != entt::null && m_registry.valid(m_selectedEntity)) {
         ImGui::Text("Selected Entity: %u", static_cast<uint32_t>(m_selectedEntity));
 
+        if (auto* tagComp = m_registry.try_get<TagComponent>(m_selectedEntity)) {
+            char tagBuf[128]{};
+            strncpy_s(tagBuf, tagComp->tag.c_str(), sizeof(tagBuf) - 1);
+            if (ImGui::InputText("Name / Tag", tagBuf, sizeof(tagBuf))) {
+                tagComp->tag = tagBuf;
+            }
+        }
+
         if (auto* transform = m_registry.try_get<TransformLocal>(m_selectedEntity)) {
             ImGui::DragFloat3("Position", &transform->translation.x, 0.05f);
             ImGui::DragFloat3("Scale", &transform->scale.x, 0.05f, 0.01f, 100.0f);
@@ -651,6 +699,24 @@ bool SandboxApp::renderFrame() {
     }
 
     ImGui::Separator();
+    ImGui::Text("Scene Management:");
+    ImGui::InputText("Scene File", m_sceneFilename, sizeof(m_sceneFilename));
+    if (ImGui::Button("Save Scene")) {
+        saveScene(m_sceneFilename);
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Load Scene")) {
+        loadScene(m_sceneFilename);
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Reset Scene")) {
+        resetScene();
+    }
+    if (!m_sceneStatusMessage.empty()) {
+        ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.4f, 1.0f), "%s", m_sceneStatusMessage.c_str());
+    }
+
+    ImGui::Separator();
     ImGui::Text("Lighting & Render:");
     if (ImGui::SliderFloat3("Sun Dir", &m_sunDirection.x, -1.f, 1.f)) {
         m_renderer.setLightDir(m_sunDirection);
@@ -662,6 +728,7 @@ bool SandboxApp::renderFrame() {
             const auto camEnt = *camView.begin();
             const auto& camTransform = camView.get<TransformLocal>(camEnt);
             const entt::entity newLight = m_registry.create();
+            m_registry.emplace<TagComponent>(newLight, TagComponent{"CustomPointLight"});
             m_registry.emplace<TransformLocal>(newLight, TransformLocal{camTransform.translation});
             m_registry.emplace<TransformWorld>(newLight);
             m_registry.emplace<PointLightComponent>(newLight, PointLightComponent{
@@ -675,6 +742,7 @@ bool SandboxApp::renderFrame() {
             markerComp.metallic = 0.1f;
             markerComp.roughness = 0.2f;
             m_registry.emplace<MeshComponent>(newLight, markerComp);
+            m_registry.emplace<MeshGeometryComponent>(newLight, MeshGeometryComponent{MeshGeometryType::Sphere, "", {0.4f, 0.f, 0.f}});
             m_registry.emplace<RenderableTag>(newLight);
             m_selectedEntity = newLight;
         }
@@ -700,6 +768,95 @@ bool SandboxApp::renderFrame() {
         }
     }
     return true;
+}
+
+void SandboxApp::saveScene(const std::string& filename) {
+    const std::filesystem::path scenePath = std::filesystem::path("assets/scenes") / filename;
+    if (SceneSerializer::serialize(scenePath, m_registry, m_sunDirection)) {
+        m_sceneStatusMessage = "Saved: " + scenePath.string();
+        m_sceneStatusTimer = 4.0f;
+    } else {
+        m_sceneStatusMessage = "Error saving scene: " + scenePath.string();
+        m_sceneStatusTimer = 4.0f;
+    }
+}
+
+void SandboxApp::loadScene(const std::string& filename) {
+    const std::filesystem::path scenePath = std::filesystem::path("assets/scenes") / filename;
+    if (!std::filesystem::exists(scenePath)) {
+        m_sceneStatusMessage = "File not found: " + scenePath.string();
+        m_sceneStatusTimer = 4.0f;
+        return;
+    }
+
+    m_selectedEntity = entt::null;
+    m_demoPointLights.clear();
+
+    SceneResourceContext resCtx{};
+    resCtx.uploadMesh = [this](const MeshCpuData& cpuData) -> uint32_t {
+        return m_meshes->upload(cpuData);
+    };
+    resCtx.spawnModel = [this](const std::filesystem::path& path, const glm::vec3& pos, float targetSize) {
+        spawnGltfModel(m_registry, m_assets, *m_meshes, *m_textures, path, pos, targetSize);
+    };
+    resCtx.createBoxCollider = [this](entt::entity entity, const glm::vec3& halfExtents, bool isStatic, float mass) {
+        m_registry.emplace<RigidBodyComponent>(entity);
+        if (isStatic) {
+            m_registry.emplace<StaticColliderTag>(entity);
+            createStaticBox(m_physics, m_registry, entity, halfExtents);
+        } else {
+            createDynamicBox(m_physics, m_registry, entity, halfExtents, mass);
+        }
+    };
+    resCtx.createSphereCollider = [this](entt::entity entity, float radius, bool isStatic, float mass) {
+        m_registry.emplace<RigidBodyComponent>(entity);
+        if (isStatic) {
+            m_registry.emplace<StaticColliderTag>(entity);
+        } else {
+            createDynamicSphere(m_physics, m_registry, entity, radius, mass);
+        }
+    };
+    resCtx.createConvexHullCollider = [this](entt::entity entity, float mass) {
+        if (!m_teapotVertices.empty()) {
+            m_registry.emplace<RigidBodyComponent>(entity);
+            createDynamicConvexHull(m_physics, m_registry, entity, m_teapotVertices, mass);
+        }
+    };
+    resCtx.destroyPhysicsBody = [this](entt::entity entity) {
+        destroyPhysicsBody(m_physics, m_registry, entity);
+    };
+    resCtx.clearPhysicsBodies = [this]() {
+        destroyPhysicsBodies(m_registry, m_physics);
+    };
+    resCtx.teapotMeshData = &m_teapotCpuData;
+
+    if (SceneSerializer::deserialize(scenePath, m_registry, m_sunDirection, resCtx)) {
+        m_renderer.setLightDir(m_sunDirection);
+        auto lightView = m_registry.view<PointLightComponent>();
+        for (const auto lightEnt : lightView) {
+            m_demoPointLights.push_back(lightEnt);
+        }
+        auto camView = m_registry.view<TransformLocal, CameraComponent>();
+        if (camView.begin() != camView.end()) {
+            auto camEnt = *camView.begin();
+            m_character.setPosition(m_registry.get<TransformLocal>(camEnt).translation - glm::vec3(0.f, m_character.eyeHeight, 0.f));
+        }
+        m_sceneStatusMessage = "Loaded: " + scenePath.string();
+        m_sceneStatusTimer = 4.0f;
+    } else {
+        m_sceneStatusMessage = "Error loading scene: " + scenePath.string();
+        m_sceneStatusTimer = 4.0f;
+    }
+}
+
+void SandboxApp::resetScene() {
+    m_selectedEntity = entt::null;
+    m_demoPointLights.clear();
+    destroyPhysicsBodies(m_registry, m_physics);
+    m_registry.clear();
+    spawnScene();
+    m_sceneStatusMessage = "Scene reset to default";
+    m_sceneStatusTimer = 3.0f;
 }
 
 void SandboxApp::shutdownEngine() {

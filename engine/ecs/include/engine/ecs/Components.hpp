@@ -6,8 +6,43 @@
 #include <glm/gtc/quaternion.hpp>
 
 #include <cstdint>
+#include <string>
 
 namespace engine {
+
+struct TagComponent {
+    std::string tag = "Entity";
+};
+
+enum class MeshGeometryType : uint8_t {
+    Custom = 0,
+    Box,
+    Sphere,
+    Plane,
+    Teapot,
+    Model
+};
+
+struct MeshGeometryComponent {
+    MeshGeometryType type = MeshGeometryType::Custom;
+    std::string assetPath;
+    glm::vec3 params{1.f};
+};
+
+enum class ColliderShapeType : uint8_t {
+    None = 0,
+    Box,
+    Sphere,
+    ConvexHull
+};
+
+struct ColliderComponent {
+    ColliderShapeType shape = ColliderShapeType::None;
+    glm::vec3 halfExtents{0.5f};
+    float radius = 0.5f;
+    bool isStatic = false;
+    float mass = 1.f;
+};
 
 struct TransformLocal {
     glm::vec3 translation{0.f};

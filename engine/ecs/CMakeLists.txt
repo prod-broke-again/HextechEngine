@@ -1,5 +1,6 @@
 add_library(engine_ecs STATIC
     src/Systems.cpp
+    src/SceneSerializer.cpp
 )
 
 target_include_directories(engine_ecs
@@ -13,6 +14,7 @@ target_link_libraries(engine_ecs
         engine_assets
         EnTT::EnTT
         glm::glm
+        nlohmann_json::nlohmann_json
 )
 
 engine_apply_compiler_options(engine_ecs)

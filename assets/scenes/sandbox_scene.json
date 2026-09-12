@@ -1,0 +1,145 @@
+{
+    "version": 1,
+    "sunDirection": [
+        -0.35,
+        -1.0,
+        -0.25
+    ],
+    "entities": [
+        {
+            "tag": "FloorVisual",
+            "transform": {
+                "translation": [0.0, 0.0, 0.0],
+                "rotation": [1.0, 0.0, 0.0, 0.0],
+                "scale": [1.0, 1.0, 1.0]
+            },
+            "geometry": {
+                "type": "Plane",
+                "assetPath": "",
+                "params": [20.0, 0.0, 0.0]
+            },
+            "material": {
+                "tint": [0.18, 0.22, 0.18],
+                "baseColorFactor": [1.0, 1.0, 1.0, 1.0],
+                "metallic": 0.0,
+                "roughness": 0.5
+            }
+        },
+        {
+            "tag": "FloorCollider",
+            "transform": {
+                "translation": [0.0, -0.5, 0.0],
+                "rotation": [1.0, 0.0, 0.0, 0.0],
+                "scale": [1.0, 1.0, 1.0]
+            },
+            "collider": {
+                "shape": "Box",
+                "halfExtents": [20.0, 0.5, 20.0],
+                "radius": 0.0,
+                "isStatic": true,
+                "mass": 0.0
+            }
+        },
+        {
+            "tag": "CharacterModel",
+            "transform": {
+                "translation": [0.0, 0.0, 0.0],
+                "rotation": [1.0, 0.0, 0.0, 0.0],
+                "scale": [1.0, 1.0, 1.0]
+            },
+            "geometry": {
+                "type": "Model",
+                "assetPath": "assets/armored+female+character+3d+model (3).glb",
+                "params": [1.8, 0.0, 0.0]
+            }
+        },
+        {
+            "tag": "Teapot",
+            "transform": {
+                "translation": [1.8, 0.0, 0.0],
+                "rotation": [1.0, 0.0, 0.0, 0.0],
+                "scale": [1.0, 1.0, 1.0]
+            },
+            "geometry": {
+                "type": "Teapot",
+                "assetPath": "assets/teapot.obj",
+                "params": [1.0, 0.0, 0.0]
+            },
+            "material": {
+                "tint": [0.95, 0.6, 0.2],
+                "baseColorFactor": [1.0, 1.0, 1.0, 1.0],
+                "metallic": 0.85,
+                "roughness": 0.2
+            },
+            "collider": {
+                "shape": "ConvexHull",
+                "halfExtents": [0.5, 0.5, 0.5],
+                "radius": 0.5,
+                "isStatic": false,
+                "mass": 1.0
+            }
+        },
+        {
+            "tag": "WarmPointLight",
+            "transform": {
+                "translation": [2.2, 1.6, 0.6],
+                "rotation": [1.0, 0.0, 0.0, 0.0],
+                "scale": [1.0, 1.0, 1.0]
+            },
+            "pointLight": {
+                "color": [1.0, 0.65, 0.2],
+                "intensity": 15.0,
+                "radius": 8.0
+            },
+            "geometry": {
+                "type": "Sphere",
+                "assetPath": "",
+                "params": [0.12, 0.0, 0.0]
+            },
+            "material": {
+                "tint": [1.0, 0.65, 0.2],
+                "baseColorFactor": [1.0, 1.0, 1.0, 1.0],
+                "metallic": 0.1,
+                "roughness": 0.2
+            }
+        },
+        {
+            "tag": "CyanPointLight",
+            "transform": {
+                "translation": [-2.0, 2.0, -0.5],
+                "rotation": [1.0, 0.0, 0.0, 0.0],
+                "scale": [1.0, 1.0, 1.0]
+            },
+            "pointLight": {
+                "color": [0.2, 0.75, 1.0],
+                "intensity": 18.0,
+                "radius": 10.0
+            },
+            "geometry": {
+                "type": "Sphere",
+                "assetPath": "",
+                "params": [0.12, 0.0, 0.0]
+            },
+            "material": {
+                "tint": [0.2, 0.75, 1.0],
+                "baseColorFactor": [1.0, 1.0, 1.0, 1.0],
+                "metallic": 0.1,
+                "roughness": 0.2
+            }
+        },
+        {
+            "tag": "MainCamera",
+            "transform": {
+                "translation": [0.0, 2.0, 6.0],
+                "rotation": [1.0, 0.0, 0.0, 0.0],
+                "scale": [1.0, 1.0, 1.0]
+            },
+            "camera": {
+                "fovDegrees": 70.0,
+                "nearPlane": 0.1,
+                "farPlane": 500.0,
+                "active": true
+            }
+        }
+    ]
+}
