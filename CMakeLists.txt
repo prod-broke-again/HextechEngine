@@ -18,6 +18,7 @@ add_subdirectory(engine/assets)
 add_subdirectory(engine/ecs)
 add_subdirectory(engine/physics)
 add_subdirectory(engine/audio)
+add_subdirectory(engine/vfx)
 
 if(ENGINE_BUILD_SANDBOX)
     add_subdirectory(apps/sandbox)

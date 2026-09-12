@@ -166,10 +166,13 @@ bool SandboxApp::initEngine() {
     shaderHotReloadWatchPath(shaderPath("pbr.vert").c_str());
     shaderHotReloadWatchPath(shaderPath("pbr.frag").c_str());
 
+    m_particles.init(m_vulkan);
+
     AudioEngine::instance().init();
-    m_physics.setContactCallback([](const glm::vec3& pos, float speed) {
+    m_physics.setContactCallback([this](const glm::vec3& pos, float speed) {
         const float volume = std::clamp(speed / 12.0f, 0.15f, 1.0f);
         AudioEngine::instance().play3D("assets/sounds/impact.wav", pos, volume, 1.0f, 35.0f);
+        m_particles.spawnImpactSparks(pos, glm::vec3(0.f, 1.f, 0.f), speed / 6.0f);
     });
 
     m_time.reset();
@@ -415,6 +418,7 @@ void SandboxApp::shootSphere() {
     m_registry.emplace<ColliderComponent>(entity, ColliderComponent{ColliderShapeType::Sphere, {0.4f, 0.4f, 0.4f}, 0.4f, false, 4.0f});
     createDynamicSphere(m_physics, m_registry, entity, 0.4f, 4.0f, velocity);
     AudioEngine::instance().play2D("assets/sounds/shoot.wav", 0.75f);
+    m_particles.spawnMuzzleFlash(spawnPos, forward);
 }
 
 void SandboxApp::kickObjectUnderCrosshair() {
@@ -554,6 +558,23 @@ void SandboxApp::updateFrame(float deltaTime) {
     updateTransforms(m_registry);
     m_renderer.tryReloadShaders();
 
+    m_particles.update(deltaTime);
+
+    auto emitterView = m_registry.view<const TransformWorld, ParticleEmitterComponent>();
+    for (const auto entity : emitterView) {
+        const auto& tw = emitterView.get<const TransformWorld>(entity);
+        auto& emitter = emitterView.get<ParticleEmitterComponent>(entity);
+        if (!emitter.active) continue;
+        emitter.timer += deltaTime;
+        const float interval = 1.0f / std::max(1.0f, emitter.spawnRate);
+        while (emitter.timer >= interval) {
+            emitter.timer -= interval;
+            const glm::vec3 pos = glm::vec3(tw.matrix[3]);
+            m_particles.spawn(pos, emitter.initialVelocity, emitter.startColor, emitter.endColor,
+                              emitter.startSize, emitter.endSize, emitter.lifetime);
+        }
+    }
+
     if (m_sceneStatusTimer > 0.f) {
         m_sceneStatusTimer -= deltaTime;
         if (m_sceneStatusTimer <= 0.f) {
@@ -599,7 +620,9 @@ bool SandboxApp::renderFrame() {
     renderPassInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
     renderPassInfo.pClearValues = clearValues.data();
 
-    m_renderer.recordShadowPass(cmd, m_registry, *m_meshes);
+    if (m_enableShadows) {
+        m_renderer.recordShadowPass(cmd, m_registry, *m_meshes);
+    }
 
     vkCmdBeginRenderPass(cmd, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 
@@ -609,6 +632,7 @@ bool SandboxApp::renderFrame() {
     const CameraState camera = findActiveCamera(m_registry, aspect);
 
     m_renderer.recordScene(cmd, m_registry, *m_meshes, *m_textures, camera);
+    m_particles.record(cmd, camera);
     if (m_showDebug) {
         m_debugDraw.record(cmd, m_registry, camera);
     }
@@ -748,6 +772,7 @@ bool SandboxApp::renderFrame() {
     if (ImGui::SliderFloat3("Sun Dir", &m_sunDirection.x, -1.f, 1.f)) {
         m_renderer.setLightDir(m_sunDirection);
     }
+    ImGui::Checkbox("Enable Shadows", &m_enableShadows);
     ImGui::Checkbox("Animate Demo Lights", &m_animateLights);
     if (ImGui::Button("Add Light at Camera")) {
         auto camView = m_registry.view<TransformLocal, CameraComponent>();
@@ -778,6 +803,30 @@ bool SandboxApp::renderFrame() {
     bool cullBackfaces = (m_renderer.cullMode() != VK_CULL_MODE_NONE);
     if (ImGui::Checkbox("Cull backfaces", &cullBackfaces)) {
         m_renderer.setCullMode(cullBackfaces ? VK_CULL_MODE_BACK_BIT : VK_CULL_MODE_NONE);
+    }
+
+    ImGui::Separator();
+    ImGui::Text("Particle VFX System:");
+    ImGui::Text("Active Particles: %zu", m_particles.activeParticleCount());
+    if (ImGui::Button("Sparks Burst at Origin")) {
+        m_particles.spawnBurst(glm::vec3(0.f, 1.5f, 0.f), 60, glm::vec4(1.f, 0.7f, 0.2f, 1.f), 6.0f);
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Fire Muzzle at Camera")) {
+        auto camView = m_registry.view<TransformLocal, CameraComponent>();
+        if (camView.begin() != camView.end()) {
+            const auto camEnt = *camView.begin();
+            const auto& camTransform = camView.get<TransformLocal>(camEnt);
+            const auto* controller = m_registry.try_get<FreeFlyController>(camEnt);
+            const float yaw = controller ? controller->yaw : 0.f;
+            const float pitch = controller ? controller->pitch : 0.f;
+            const glm::vec3 forward{std::cos(yaw) * std::cos(pitch), std::sin(pitch), std::sin(yaw) * std::cos(pitch)};
+            m_particles.spawnMuzzleFlash(camTransform.translation + forward * 1.5f, forward);
+        }
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Clear VFX")) {
+        m_particles.clear();
     }
 
     ImGui::Separator();
@@ -915,6 +964,7 @@ void SandboxApp::shutdownEngine() {
         m_meshes->clear();
     }
     m_imgui.shutdown();
+    m_particles.shutdown();
     AudioEngine::instance().shutdown();
     m_vulkan.shutdown();
     m_platform.shutdown();

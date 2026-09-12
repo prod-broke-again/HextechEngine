@@ -69,12 +69,27 @@ if(GLSLC)
         DEPENDS ${SHADER_DIR}/equirect_to_cube.frag
         COMMENT "Compile equirect_to_cube.frag"
     )
+    set(SPV_PARTICLE_VERT "${SPV_OUT_DIR}/particle.vert.spv")
+    set(SPV_PARTICLE_FRAG "${SPV_OUT_DIR}/particle.frag.spv")
+    add_custom_command(
+        OUTPUT ${SPV_PARTICLE_VERT}
+        COMMAND ${GLSLC} -fshader-stage=vertex -o ${SPV_PARTICLE_VERT} ${SHADER_DIR}/particle.vert
+        DEPENDS ${SHADER_DIR}/particle.vert
+        COMMENT "Compile particle.vert"
+    )
+    add_custom_command(
+        OUTPUT ${SPV_PARTICLE_FRAG}
+        COMMAND ${GLSLC} -fshader-stage=fragment -o ${SPV_PARTICLE_FRAG} ${SHADER_DIR}/particle.frag
+        DEPENDS ${SHADER_DIR}/particle.frag
+        COMMENT "Compile particle.frag"
+    )
     set(ENGINE_SHADER_SPIRV
         ${SPV_PBR_VERT} ${SPV_PBR_FRAG}
         ${SPV_SHADOW_VERT}
         ${SPV_SKY_VERT} ${SPV_SKY_FRAG}
         ${SPV_DEBUG_VERT} ${SPV_DEBUG_FRAG}
         ${SPV_FULLSCREEN_VERT} ${SPV_EQUIRECT_FRAG}
+        ${SPV_PARTICLE_VERT} ${SPV_PARTICLE_FRAG}
     )
 else()
     message(WARNING "glslc not found; shader SPIR-V must be provided manually in ${SPV_OUT_DIR}")
@@ -117,7 +132,7 @@ else()
     target_include_directories(engine_vulkan PRIVATE ${ENGINE_VMA_INCLUDE})
 endif()
 
-target_compile_definitions(engine_vulkan PRIVATE
+target_compile_definitions(engine_vulkan PUBLIC
     SHADER_DIR="${SHADER_DIR}"
     SPV_PBR_VERT_PATH="${SPV_PBR_VERT}"
     SPV_PBR_FRAG_PATH="${SPV_PBR_FRAG}"
@@ -128,6 +143,8 @@ target_compile_definitions(engine_vulkan PRIVATE
     SPV_DEBUG_FRAG_PATH="${SPV_DEBUG_FRAG}"
     SPV_FULLSCREEN_VERT_PATH="${SPV_FULLSCREEN_VERT}"
     SPV_EQUIRECT_FRAG_PATH="${SPV_EQUIRECT_FRAG}"
+    SPV_PARTICLE_VERT_PATH="${SPV_PARTICLE_VERT}"
+    SPV_PARTICLE_FRAG_PATH="${SPV_PARTICLE_FRAG}"
 )
 
 engine_apply_compiler_options(engine_vulkan)

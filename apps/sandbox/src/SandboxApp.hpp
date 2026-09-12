@@ -13,6 +13,7 @@
 #include "engine/renderer/vulkan/GpuTextureCache.hpp"
 #include "engine/renderer/vulkan/PbrRenderer.hpp"
 #include "engine/renderer/vulkan/VulkanContext.hpp"
+#include "engine/vfx/ParticleSystem.hpp"
 
 #include <entt/entt.hpp>
 #include <memory>
@@ -55,9 +56,11 @@ private:
     JoltWorld m_physics;
     AssetManager m_assets;
     CharacterController m_character;
+    ParticleSystem m_particles;
     CameraMode m_cameraMode = CameraMode::FreeFly;
     entt::entity m_selectedEntity = entt::null;
     bool m_showDebug = true;
+    bool m_enableShadows = true;
 
     MeshComponent m_cubeComp{};
     MeshComponent m_teapotComp{};

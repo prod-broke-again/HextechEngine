@@ -11,6 +11,7 @@ target_link_libraries(sandbox PRIVATE
     engine_ecs
     engine_physics
     engine_audio
+    engine_vfx
     glfw
     glm::glm
     EnTT::EnTT
@@ -25,6 +26,7 @@ target_include_directories(sandbox PRIVATE
     ${CMAKE_SOURCE_DIR}/engine/ecs/include
     ${CMAKE_SOURCE_DIR}/engine/physics/include
     ${CMAKE_SOURCE_DIR}/engine/audio/include
+    ${CMAKE_SOURCE_DIR}/engine/vfx/include
 )
 
 target_compile_definitions(sandbox PRIVATE

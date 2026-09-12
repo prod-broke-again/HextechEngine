@@ -118,4 +118,17 @@ struct AudioListenerComponent {
     bool active = true;
 };
 
+struct ParticleEmitterComponent {
+    bool active = true;
+    float spawnRate = 20.0f; // particles per second
+    float timer = 0.0f;
+    glm::vec4 startColor{1.0f, 0.6f, 0.2f, 1.0f};
+    glm::vec4 endColor{1.0f, 0.1f, 0.0f, 0.0f};
+    float startSize = 0.15f;
+    float endSize = 0.02f;
+    float lifetime = 0.8f;
+    glm::vec3 initialVelocity{0.f, 2.f, 0.f};
+    float velocitySpread = 1.0f;
+};
+
 } // namespace engine
