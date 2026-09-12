@@ -105,4 +105,17 @@ struct CameraState {
     float aspect = 1.f;
 };
 
+struct AudioSourceComponent {
+    std::string soundPath;
+    float volume = 1.0f;
+    float minDistance = 1.0f;
+    float maxDistance = 30.0f;
+    bool loop = false;
+    bool playOnAwake = false;
+};
+
+struct AudioListenerComponent {
+    bool active = true;
+};
+
 } // namespace engine

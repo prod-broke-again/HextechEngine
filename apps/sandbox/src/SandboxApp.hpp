@@ -74,6 +74,7 @@ private:
     char m_sceneFilename[128] = "sandbox_scene.json";
     std::string m_sceneStatusMessage;
     float m_sceneStatusTimer = 0.f;
+    float m_masterVolume = 1.0f;
 
     void saveScene(const std::string& filename);
     void loadScene(const std::string& filename);

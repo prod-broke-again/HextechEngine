@@ -4,6 +4,7 @@
 #include "engine/assets/GltfTextureLoader.hpp"
 #include "engine/assets/MeshBuilder.hpp"
 #include "engine/assets/ObjMeshLoader.hpp"
+#include "engine/audio/AudioEngine.hpp"
 #include "engine/core/Events.hpp"
 #include "engine/core/Log.hpp"
 #include "engine/core/Path.hpp"
@@ -164,6 +165,12 @@ bool SandboxApp::initEngine() {
 
     shaderHotReloadWatchPath(shaderPath("pbr.vert").c_str());
     shaderHotReloadWatchPath(shaderPath("pbr.frag").c_str());
+
+    AudioEngine::instance().init();
+    m_physics.setContactCallback([](const glm::vec3& pos, float speed) {
+        const float volume = std::clamp(speed / 12.0f, 0.15f, 1.0f);
+        AudioEngine::instance().play3D("assets/sounds/impact.wav", pos, volume, 1.0f, 35.0f);
+    });
 
     m_time.reset();
     spawnScene();
@@ -407,6 +414,7 @@ void SandboxApp::shootSphere() {
     m_registry.emplace<RigidBodyComponent>(entity);
     m_registry.emplace<ColliderComponent>(entity, ColliderComponent{ColliderShapeType::Sphere, {0.4f, 0.4f, 0.4f}, 0.4f, false, 4.0f});
     createDynamicSphere(m_physics, m_registry, entity, 0.4f, 4.0f, velocity);
+    AudioEngine::instance().play2D("assets/sounds/shoot.wav", 0.75f);
 }
 
 void SandboxApp::kickObjectUnderCrosshair() {
@@ -470,7 +478,12 @@ void SandboxApp::updateFrame(float deltaTime) {
                 if (m_inputMap.actionDown(m_input, Action::MoveBack))    moveInput.y -= 1.0f;
                 if (m_inputMap.actionDown(m_input, Action::MoveRight))   moveInput.x += 1.0f;
                 if (m_inputMap.actionDown(m_input, Action::MoveLeft))    moveInput.x -= 1.0f;
-                if (m_inputMap.actionPressed(m_input, Action::Jump))     jump = true;
+                if (m_inputMap.actionPressed(m_input, Action::Jump)) {
+                    jump = true;
+                    if (m_character.isGrounded()) {
+                        AudioEngine::instance().play2D("assets/sounds/jump.wav", 0.7f);
+                    }
+                }
             }
 
             m_character.update(m_physics, deltaTime, moveInput, controller.yaw, jump);
@@ -478,6 +491,20 @@ void SandboxApp::updateFrame(float deltaTime) {
         }
     } else {
         updateFreeFlyCamera(m_registry, m_input, m_inputMap, deltaTime);
+    }
+
+    // Update 3D audio listener from active camera
+    auto camView = m_registry.view<TransformLocal, CameraComponent>();
+    if (camView.begin() != camView.end()) {
+        const auto camEnt = *camView.begin();
+        const auto& camTransform = camView.get<TransformLocal>(camEnt);
+        const auto* controller = m_registry.try_get<FreeFlyController>(camEnt);
+        const float yaw = controller ? controller->yaw : 0.f;
+        const float pitch = controller ? controller->pitch : 0.f;
+        const glm::vec3 forward{std::cos(yaw) * std::cos(pitch), std::sin(pitch), std::sin(yaw) * std::cos(pitch)};
+        const glm::vec3 right = glm::normalize(glm::cross(forward, glm::vec3(0.f, 1.f, 0.f)));
+        const glm::vec3 up = glm::normalize(glm::cross(right, forward));
+        AudioEngine::instance().updateListener(camTransform.translation, forward, up);
     }
 
     if (!keyboardCaptured) {
@@ -752,6 +779,23 @@ bool SandboxApp::renderFrame() {
     if (ImGui::Checkbox("Cull backfaces", &cullBackfaces)) {
         m_renderer.setCullMode(cullBackfaces ? VK_CULL_MODE_BACK_BIT : VK_CULL_MODE_NONE);
     }
+
+    ImGui::Separator();
+    ImGui::Text("Audio System (miniaudio):");
+    if (ImGui::SliderFloat("Master Volume", &m_masterVolume, 0.0f, 1.0f, "%.2f")) {
+        AudioEngine::instance().setMasterVolume(m_masterVolume);
+    }
+    if (ImGui::Button("Play 2D Test")) {
+        AudioEngine::instance().play2D("assets/sounds/test.wav", 0.8f);
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Play 3D Origin")) {
+        AudioEngine::instance().play3D("assets/sounds/test.wav", glm::vec3(0.0f, 1.0f, 0.0f), 1.0f, 1.0f, 25.0f);
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Play Shoot")) {
+        AudioEngine::instance().play2D("assets/sounds/shoot.wav", 0.8f);
+    }
     ImGui::End();
     m_imgui.endFrame(cmd);
 
@@ -871,6 +915,7 @@ void SandboxApp::shutdownEngine() {
         m_meshes->clear();
     }
     m_imgui.shutdown();
+    AudioEngine::instance().shutdown();
     m_vulkan.shutdown();
     m_platform.shutdown();
 }

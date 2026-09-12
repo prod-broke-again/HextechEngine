@@ -85,6 +85,28 @@ public:
     }
 };
 
+class WorldContactListener final : public JPH::ContactListener {
+public:
+    JoltWorld::ContactCallback callback;
+
+    void OnContactAdded(const JPH::Body& inBody1, const JPH::Body& inBody2,
+                        const JPH::ContactManifold& inManifold, JPH::ContactSettings& ioSettings) override {
+        (void)ioSettings;
+        if (!callback) return;
+
+        if (!inBody1.IsDynamic() && !inBody2.IsDynamic()) return;
+
+        const JPH::Vec3 v1 = inBody1.GetLinearVelocity();
+        const JPH::Vec3 v2 = inBody2.GetLinearVelocity();
+        const float relSpeed = (v1 - v2).Length();
+
+        if (relSpeed > 1.2f) {
+            const JPH::RVec3 pt = inManifold.GetWorldSpaceContactPointOn1(0);
+            callback(glm::vec3(pt.GetX(), pt.GetY(), pt.GetZ()), relSpeed);
+        }
+    }
+};
+
 struct JoltWorld::Impl {
     JPH::TempAllocatorImpl* tempAllocator = nullptr;
     JPH::JobSystemThreadPool* jobSystem = nullptr;
@@ -93,6 +115,7 @@ struct JoltWorld::Impl {
     BPLayerInterfaceImpl broadPhaseLayerInterface;
     ObjectVsBroadPhaseLayerFilterImpl objectVsBroadPhaseLayerFilter;
     ObjectLayerPairFilterImpl objectLayerPairFilter;
+    WorldContactListener contactListener;
 
     Impl() {
         tempAllocator = new JPH::TempAllocatorImpl(10 * 1024 * 1024);
@@ -106,6 +129,7 @@ struct JoltWorld::Impl {
 
         physics.Init(cMaxBodies, cNumBodyMutexes, cMaxBodyPairs, cMaxContactConstraints,
                      broadPhaseLayerInterface, objectVsBroadPhaseLayerFilter, objectLayerPairFilter);
+        physics.SetContactListener(&contactListener);
     }
 
     ~Impl() {
@@ -142,6 +166,12 @@ void JoltWorld::step(float deltaTime) {
     }
     constexpr int cCollisionSteps = 1;
     m_impl->physics.Update(deltaTime, cCollisionSteps, m_impl->tempAllocator, m_impl->jobSystem);
+}
+
+void JoltWorld::setContactCallback(ContactCallback callback) {
+    if (m_impl) {
+        m_impl->contactListener.callback = std::move(callback);
+    }
 }
 
 } // namespace engine

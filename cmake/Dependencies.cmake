@@ -125,3 +125,16 @@ if(NOT EXISTS "${CGLTF_FETCH_DIR}/cgltf.h")
 endif()
 add_library(cgltf_impl STATIC "${CMAKE_CURRENT_LIST_DIR}/../third_party/cgltf_impl.c")
 target_include_directories(cgltf_impl PUBLIC "${CGLTF_FETCH_DIR}")
+
+# miniaudio (header + implementation)
+set(MINIAUDIO_FETCH_DIR "${CMAKE_BINARY_DIR}/_deps/miniaudio")
+file(MAKE_DIRECTORY "${MINIAUDIO_FETCH_DIR}")
+if(NOT EXISTS "${MINIAUDIO_FETCH_DIR}/miniaudio.h")
+    file(DOWNLOAD
+        "https://raw.githubusercontent.com/mackron/miniaudio/master/miniaudio.h"
+        "${MINIAUDIO_FETCH_DIR}/miniaudio.h"
+        SHOW_PROGRESS
+    )
+endif()
+add_library(miniaudio_impl STATIC "${CMAKE_CURRENT_LIST_DIR}/../third_party/miniaudio_impl.c")
+target_include_directories(miniaudio_impl PUBLIC "${MINIAUDIO_FETCH_DIR}")
