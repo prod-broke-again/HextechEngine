@@ -1,3 +1,8 @@
+#include "ui/TopHudPanel.hpp"
+#include "ui/EvolutionBannerPanel.hpp"
+#include "ui/BuildDockPanel.hpp"
+#include "ui/InspectorPanel.hpp"
+#include "ui/HoverTooltipPanel.hpp"
 #include "EraSandboxModule.hpp"
 
 #include "engine/assets/MeshBuilder.hpp"
@@ -102,6 +107,10 @@ MeshCpuData createHoverQuadMesh() {
 }
 
 } // namespace
+
+void EraSandboxModule::registerCommands(CommandRegistry& registry) {
+    registerCityCommands(registry);
+}
 
 void EraSandboxModule::onAttach(World& world) {
     m_world = &world;
@@ -338,23 +347,18 @@ void EraSandboxModule::updateFrame(World& world, float deltaTime) {
     if (!mouseCaptured && m_hasHoverTile) {
         if (m_world->resource<Input>().mouseButtonPressed(GLFW_MOUSE_BUTTON_LEFT)) {
             if (m_demolishMode) {
-                if (CitySystems::demolishBuilding(*m_world, m_hoverX, m_hoverZ)) {
-                    // Check if we demolished the inspected building
-                    auto& grid = m_world->resource<GridIndex>();
-                    if (grid.cells[m_hoverZ][m_hoverX].entity == m_inspectedBuildingId) {
-                        m_inspectedBuildingId = entt::null;
-                    }
+                m_world->commandQueue().enqueue(DemolishBuildingCmd{m_hoverX, m_hoverZ});
+                const auto& grid = m_world->resource<GridIndex>();
+                if (grid.cells[m_hoverZ][m_hoverX].entity == m_inspectedBuildingId) {
+                    m_inspectedBuildingId = entt::null;
                 }
             } else if (m_selectedBuildType != BuildingType::None) {
-                if (CitySystems::placeBuilding(*m_world, m_hoverX, m_hoverZ, m_selectedBuildType)) {
-                    auto& grid = m_world->resource<GridIndex>();
-                    m_inspectedBuildingId = grid.cells[m_hoverZ][m_hoverX].entity;
-                    if (!m_world->resource<Input>().keyDown(GLFW_KEY_LEFT_SHIFT)) {
-                        m_selectedBuildType = BuildingType::None;
-                    }
+                m_world->commandQueue().enqueue(PlaceBuildingCmd{m_hoverX, m_hoverZ, m_selectedBuildType});
+                if (!m_world->resource<Input>().keyDown(GLFW_KEY_LEFT_SHIFT)) {
+                    m_selectedBuildType = BuildingType::None;
                 }
             } else {
-                auto& grid = m_world->resource<GridIndex>();
+                const auto& grid = m_world->resource<GridIndex>();
                 entt::entity e = grid.cells[m_hoverZ][m_hoverX].entity;
                 m_inspectedBuildingId = (e != entt::null && m_world->registry().valid(e)) ? e : entt::null;
             }
@@ -444,7 +448,7 @@ void EraSandboxModule::updateFrame(World& world, float deltaTime) {
             auto& state = m_world->resource<CityState>();
             mc.mesh = m_cityMeshes.getBuildingMesh(m_selectedBuildType, state.currentEra);
 
-            if (CitySystems::canPlace(*m_world, m_hoverX, m_hoverZ, m_selectedBuildType)) {
+            if (validate(*m_world, PlaceBuildingCmd{m_hoverX, m_hoverZ, m_selectedBuildType}).ok()) {
                 mc.tint = glm::vec3(0.3f, 1.0f, 0.4f);
                 mc.emissiveIntensity = 0.8f;
             } else {
@@ -457,326 +461,18 @@ void EraSandboxModule::updateFrame(World& world, float deltaTime) {
     }
 }
 
-void EraSandboxModule::renderUi(World& world) {
-    const float winWidth = static_cast<float>(m_world->resource<PlatformGLFW>().framebufferSize().x);
-    const float winHeight = static_cast<float>(m_world->resource<PlatformGLFW>().framebufferSize().y);
+void EraSandboxModule::renderUi(const World& world, CommandQueue& commands) {
+    const auto fbSize = world.resource<PlatformGLFW>().framebufferSize();
+    const float winWidth = static_cast<float>(std::max(1, fbSize.x));
+    const float winHeight = static_cast<float>(std::max(1, fbSize.y));
 
-    auto& state = m_world->resource<CityState>();
-
-    // 1. Top HUD (Global Resources & Era)
-    ImGui::SetNextWindowPos(ImVec2(10.0f, 10.0f), ImGuiCond_Always);
-    ImGui::SetNextWindowBgAlpha(0.85f);
-    if (ImGui::Begin("City Status HUD", nullptr,
-                     ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
-                     ImGuiWindowFlags_NoMove | ImGuiWindowFlags_AlwaysAutoResize |
-                     ImGuiWindowFlags_NoSavedSettings)) {
-        
-        ImGui::TextColored(ImVec4(1.0f, 0.82f, 0.2f, 1.0f), "[%s]", getEraName(state.currentEra).data());
-        ImGui::SameLine();
-        ImGui::Text("  |  ");
-        ImGui::SameLine();
-        ImGui::Text("Settlers: %d/%d", state.totalPopulation, state.maxPopulation);
-        ImGui::SameLine();
-        ImGui::TextColored(ImVec4(0.4f, 0.9f, 0.4f, 1.0f), "(%.0f%% happy)", state.averageSatisfaction * 100.0f);
-        
-        ImGui::Spacing();
-        ImGui::Separator();
-        ImGui::Spacing();
-
-        const float goldRate = state.taxIncomePerMinute;
-        ImGui::TextColored(ImVec4(1.0f, 0.9f, 0.4f, 1.0f), "Gold: %.0f  (%.1f / min)", 
-                           state.storage.get(ResourceType::Gold), goldRate);
-
-        ImGui::SameLine(); ImGui::Text("  |  "); ImGui::SameLine();
-        
-        const float woodRate = state.productionRatesPerMin[static_cast<size_t>(ResourceType::Wood)] - state.consumptionRatesPerMin[static_cast<size_t>(ResourceType::Wood)];
-        ImGui::TextColored(woodRate >= 0 ? ImVec4(0.6f, 0.8f, 0.4f, 1.0f) : ImVec4(0.9f, 0.4f, 0.4f, 1.0f), 
-                           "(%.1f / min)", woodRate);
-        ImGui::SameLine();
-        ImGui::Text("Wood: %.1f", state.storage.get(ResourceType::Wood));
-        
-        ImGui::SameLine(); ImGui::Text("  |  "); ImGui::SameLine();
-        
-        const float fishRate = state.productionRatesPerMin[static_cast<size_t>(ResourceType::Fish)] - state.consumptionRatesPerMin[static_cast<size_t>(ResourceType::Fish)];
-        ImGui::TextColored(fishRate >= 0 ? ImVec4(0.6f, 0.8f, 0.4f, 1.0f) : ImVec4(0.9f, 0.4f, 0.4f, 1.0f), 
-                           "(%.1f / min)", fishRate);
-        ImGui::SameLine();
-        ImGui::Text("Fish: %.1f", state.storage.get(ResourceType::Fish));
-
-        ImGui::SameLine(); ImGui::Text("  |  "); ImGui::SameLine();
-        
-        const float stoneRate = state.productionRatesPerMin[static_cast<size_t>(ResourceType::Stone)] - state.consumptionRatesPerMin[static_cast<size_t>(ResourceType::Stone)];
-        ImGui::TextColored(stoneRate >= 0 ? ImVec4(0.6f, 0.8f, 0.4f, 1.0f) : ImVec4(0.9f, 0.4f, 0.4f, 1.0f), 
-                           "(%.1f / min)", stoneRate);
-        ImGui::SameLine();
-        ImGui::Text("Stone: %.1f", state.storage.get(ResourceType::Stone));
-
-        ImGui::Spacing();
-        ImGui::Separator();
-        ImGui::Spacing();
-
-        auto& cPool = m_world->resource<CarrierPool>();
-        ImGui::TextColored(ImVec4(0.8f, 0.8f, 0.8f, 1.0f), "Global Warehouse Couriers: %d / %d active", 
-                           cPool.activeCarrierCount, cPool.totalCarrierCount);
-
-    }
-    ImGui::End();
-
-    // 2. Era Evolution Banner
-    if (CitySystems::canEvolve(*m_world)) {
-        ImGui::SetNextWindowPos(ImVec2(winWidth / 2.0f, 80.0f), ImGuiCond_Always, ImVec2(0.5f, 0.0f));
-        ImGui::SetNextWindowBgAlpha(0.9f);
-        if (ImGui::Begin("Era Evolution", nullptr, 
-                         ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_AlwaysAutoResize)) {
-            
-            ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.2f, 1.0f), "★★★ Your city is ready to evolve! ★★★");
-            if (ImGui::Button("Evolve to Next Era!", ImVec2(280, 40))) {
-                CitySystems::evolveToNextEra(*m_world);
-            }
-        }
-        ImGui::End();
-    }
-
-    // 3. Build Dock (Bottom HUD)
-    ImGui::SetNextWindowPos(ImVec2(winWidth / 2.0f, winHeight - 10.0f), ImGuiCond_Always, ImVec2(0.5f, 1.0f));
-    ImGui::SetNextWindowBgAlpha(0.85f);
-    if (ImGui::Begin("Build Dock", nullptr,
-                     ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | 
-                     ImGuiWindowFlags_NoMove | ImGuiWindowFlags_AlwaysAutoResize)) {
-        
-        ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "CONSTRUCTION DOCK");
-        ImGui::Separator();
-        ImGui::Spacing();
-
-        const auto buildings = getAvailableBuildingsForEra(state.currentEra);
-        
-        for (size_t i = 0; i < buildings.size(); ++i) {
-            const BuildingType bType = buildings[i];
-            const BuildingDef& def = getBuildingDef(bType);
-
-            const bool canAfford = CitySystems::canAfford(*m_world, bType);
-            
-            if (!canAfford) {
-                ImGui::BeginDisabled();
-            }
-            
-            if (m_selectedBuildType == bType) {
-                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.6f, 0.2f, 1.0f));
-                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.3f, 0.7f, 0.3f, 1.0f));
-            } else {
-                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.2f, 0.25f, 1.0f));
-                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.3f, 0.3f, 0.35f, 1.0f));
-            }
-
-            if (ImGui::Button(def.name.data(), ImVec2(100, 40))) {
-                m_selectedBuildType = bType;
-                m_demolishMode = false;
-                m_inspectedBuildingId = entt::null;
-            }
-            
-            ImGui::PopStyleColor(2);
-
-            if (!canAfford) {
-                ImGui::EndDisabled();
-            }
-
-            if (ImGui::IsItemHovered()) {
-                ImGui::BeginTooltip();
-                ImGui::TextUnformatted(def.name.data());
-                ImGui::Separator();
-                ImGui::Text("Cost:");
-                for (size_t resIdx = 0; resIdx < kResourceCount; ++resIdx) {
-                    float amount = def.cost.amounts[resIdx];
-                    if (amount > 0.0f) {
-                        ImGui::Text(" - %.0f %s", amount, getResourceName(static_cast<ResourceType>(resIdx)).data());
-                    }
-                }
-                ImGui::Spacing();
-                ImGui::Text("%s", def.description.data());
-                ImGui::EndTooltip();
-            }
-
-            if (i < buildings.size() - 1) {
-                ImGui::SameLine();
-            }
-        }
-
-        ImGui::SameLine(0, 30.0f); // Gap before demolish button
-
-        if (m_demolishMode) {
-            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.8f, 0.2f, 0.2f, 1.0f));
-            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.9f, 0.3f, 0.3f, 1.0f));
-        } else {
-            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.4f, 0.15f, 0.15f, 1.0f));
-            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.5f, 0.2f, 0.2f, 1.0f));
-        }
-
-        if (ImGui::Button("Demolish", ImVec2(80, 40))) {
-            m_demolishMode = !m_demolishMode;
-            if (m_demolishMode) {
-                m_selectedBuildType = BuildingType::None;
-                m_inspectedBuildingId = entt::null;
-            }
-        }
-        ImGui::PopStyleColor(2);
-
-    }
-    ImGui::End();
-
-    // 4. Inspector Panel (Right HUD)
-    if (m_world->registry().valid(m_inspectedBuildingId)) {
-        auto& b = m_world->registry().get<BuildingComponent>(m_inspectedBuildingId);
-        auto& pos = m_world->registry().get<GridPosition>(m_inspectedBuildingId);
-        
-        ImGui::SetNextWindowPos(ImVec2(winWidth - 10.0f, 10.0f), ImGuiCond_Always, ImVec2(1.0f, 0.0f));
-        ImGui::SetNextWindowSize(ImVec2(320.0f, 0.0f), ImGuiCond_Always);
-        ImGui::SetNextWindowBgAlpha(0.9f);
-
-        if (ImGui::Begin("Inspector", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_AlwaysAutoResize)) {
-            
-            const BuildingDef& def = getBuildingDef(b.type);
-            
-            ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.2f, 1.0f), "%s", def.name.data());
-            ImGui::Text("Position: [%d, %d]", pos.x, pos.z);
-            ImGui::Separator();
-            ImGui::Spacing();
-
-            if (b.type == BuildingType::TownCenter) {
-                ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "TOWN CENTER HUB");
-                ImGui::Spacing();
-                
-                ImGui::Text("Current Era: %s", getEraName(state.currentEra).data());
-                ImGui::Spacing();
-                
-                if (state.currentEra == EraType::StoneAge) {
-                    const EraDefinition& eraDef = getEraDefinition(EraType::BronzeAge);
-                    
-                    ImGui::TextColored(ImVec4(0.5f, 1.0f, 0.5f, 1.0f), "Evolution Requirements:");
-                    
-                    const bool popOk = (state.totalPopulation >= eraDef.requiredPopulation);
-                    ImGui::TextColored(popOk ? ImVec4(0.2f, 1.0f, 0.2f, 1.0f) : ImVec4(1.0f, 0.2f, 0.2f, 1.0f), 
-                                       "[%s] Population: %d / %d", 
-                                       popOk ? "x" : " ", state.totalPopulation, eraDef.requiredPopulation);
-                    
-                    for (const auto& req : eraDef.evolutionRequirements) {
-                        const float current = state.storage.get(req.resource);
-                        const bool resOk = current >= static_cast<float>(req.requiredAmount);
-                        ImGui::TextColored(resOk ? ImVec4(0.2f, 1.0f, 0.2f, 1.0f) : ImVec4(1.0f, 0.2f, 0.2f, 1.0f), 
-                                           "[%s] %s: %.0f / %.0f", 
-                                           resOk ? "x" : " ", getResourceName(req.resource).data(), current, req.requiredAmount);
-                    }
-                    
-                    ImGui::Spacing();
-                    const bool ready = CitySystems::canEvolve(*m_world);
-                    if (!ready) ImGui::BeginDisabled();
-                    if (ImGui::Button("Evolve to Bronze Age!", ImVec2(-1.0f, 40.0f))) {
-                        CitySystems::evolveToNextEra(*m_world);
-                    }
-                    if (!ready) ImGui::EndDisabled();
-                    
-                    ImGui::Spacing();
-                    ImGui::Separator();
-                    ImGui::Spacing();
-                }
-
-                auto& cPool = m_world->resource<CarrierPool>();
-                ImGui::Text("Warehouse Fleet: %d / %d busy", cPool.activeCarrierCount, cPool.totalCarrierCount);
-                
-                if (ImGui::TreeNodeEx("Active Couriers", ImGuiTreeNodeFlags_DefaultOpen)) {
-                    auto view = m_world->registry().view<CarrierComponent>();
-                    for (auto e : view) {
-                        auto& c = view.get<CarrierComponent>(e);
-                        if (c.state != CarrierState::IdleAtWarehouse) {
-                            ImGui::BulletText("Courier fetching %s", getResourceName(c.carriedResource).data());
-                        }
-                    }
-                    ImGui::TreePop();
-                }
-
-            } else if (b.type == BuildingType::Residence) {
-                if (auto* res = m_world->registry().try_get<ResidenceComponent>(m_inspectedBuildingId)) {
-                    ImGui::Text("Inhabitants: %d / %d", res->currentInhabitants, res->maxInhabitants);
-                    ImGui::Spacing();
-                    
-                    ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "Needs Fulfillment:");
-                    
-                    ImGui::Text("Food (Fish): %.0f%%", res->foodSatisfaction * 100.0f);
-                    ImGui::ProgressBar(res->foodSatisfaction, ImVec2(-1.0f, 12.0f), "");
-                    
-                    ImGui::Spacing();
-                    
-                    ImGui::Text("Warmth (Firewood): %.0f%%", res->warmthSatisfaction * 100.0f);
-                    ImGui::ProgressBar(res->warmthSatisfaction, ImVec2(-1.0f, 12.0f), "");
-
-                    ImGui::Spacing();
-                    const float currentTax = def.baseTaxIncomePerMinute * res->overallSatisfaction * 
-                                             (static_cast<float>(res->currentInhabitants) / static_cast<float>(res->maxInhabitants));
-                    ImGui::TextColored(ImVec4(1.0f, 0.9f, 0.4f, 1.0f), "Generating %.1f gold/min", currentTax);
-                }
-
-            } else if (def.production.outputPerMinute > 0.0f) {
-                if (auto* prod = m_world->registry().try_get<ProductionComponent>(m_inspectedBuildingId)) {
-                    ImGui::Text("Production: %s", getResourceName(def.production.outputResource).data());
-                    
-                    const float buf = prod->internalBuffer;
-                    const float maxBuf = prod->maxBuffer;
-                    ImGui::Text("Output Buffer: %.1f / %.1f", buf, maxBuf);
-                    ImGui::ProgressBar(buf / maxBuf, ImVec2(-1.0f, 12.0f), "");
-                    
-                    if (prod->isBufferFull) {
-                        ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.1f, 1.0f), "WARNING: Buffer Full! Waiting for pickup.");
-                    } else if (prod->hasCourierAssigned) {
-                        ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.4f, 1.0f), "Courier is en-route for pickup.");
-                    } else {
-                        ImGui::Text("Producing normally.");
-                    }
-
-                    if (prod->isWorking) {
-                        ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.4f, 1.0f), "[WORKING]");
-                        const float progressFrac = prod->progress / std::max(0.1f, def.production.cycleSeconds);
-                        ImGui::ProgressBar(progressFrac, ImVec2(-1.0f, 8.0f), "Cycle");
-                    } else if (prod->isBufferFull) {
-                        ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.1f, 1.0f), "[HALTED - STORAGE FULL]");
-                    } else {
-                        ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "[HALTED - MISSING INPUTS]");
-                    }
-                }
-            }
-
-            ImGui::Spacing();
-            ImGui::Separator();
-            ImGui::Spacing();
-
-            if (b.type != BuildingType::TownCenter) {
-                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.7f, 0.2f, 0.2f, 1.0f));
-                if (ImGui::Button("Demolish Building", ImVec2(-1.0f, 30.0f))) {
-                    CitySystems::demolishBuilding(*m_world, pos.x, pos.z);
-                    m_inspectedBuildingId = entt::null;
-                }
-                ImGui::PopStyleColor();
-            }
-        }
-        ImGui::End();
-    } else {
-        m_inspectedBuildingId = entt::null;
-    }
-
-    // 5. Tooltips for hover
-    if (!ImGui::GetIO().WantCaptureMouse && m_hasHoverTile && !m_demolishMode && m_selectedBuildType == BuildingType::None) {
-        if (!m_world->registry().valid(m_inspectedBuildingId)) {
-            auto& grid = m_world->resource<GridIndex>();
-            entt::entity hoveredId = grid.cells[m_hoverZ][m_hoverX].entity;
-            if (m_world->registry().valid(hoveredId)) {
-                ImGui::BeginTooltip();
-                auto& hb = m_world->registry().get<BuildingComponent>(hoveredId);
-                const BuildingDef& hDef = getBuildingDef(hb.type);
-                ImGui::TextUnformatted(hDef.name.data());
-                ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "Click to inspect");
-                ImGui::EndTooltip();
-            }
-        }
-    }
+    ui::drawTopHud(world, commands);
+    ui::drawEvolutionBanner(world, commands, winWidth);
+    ui::drawBuildDock(world, commands, winWidth, winHeight, m_selectedBuildType, m_demolishMode, m_inspectedBuildingId);
+    ui::drawInspector(world, commands, winWidth, m_inspectedBuildingId);
+    ui::drawHoverTooltip(world, m_hasHoverTile, m_hoverX, m_hoverZ, m_selectedBuildType, m_demolishMode, m_inspectedBuildingId);
 }
+
 bool EraSandboxModule::renderFrame(World& world) {
     const glm::ivec2 currentSize = world.resource<PlatformGLFW>().framebufferSize();
     if (currentSize.x <= 0 || currentSize.y <= 0) {
@@ -848,7 +544,7 @@ bool EraSandboxModule::renderFrame(World& world) {
     world.resource<PostProcessPipeline>().recordComposite(cmd);
 
     world.resource<ImGuiLayer>().beginFrame();
-    renderUi(world);
+    renderUi(world, world.commandQueue());
     world.resource<ImGuiLayer>().endFrame(cmd);
 
     vkCmdEndRenderPass(cmd);

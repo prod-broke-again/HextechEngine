@@ -15,9 +15,11 @@ add_executable(engine_tests
     main.cpp
     FoundationTests.cpp
     runtime/ModuleRegistry_test.cpp
+    world/CommandRegistry_test.cpp
+    simulation/CityCommands_test.cpp
 )
 
-target_link_libraries(engine_tests PRIVATE doctest_lib engine_foundation engine_world engine_runtime)
+target_link_libraries(engine_tests PRIVATE doctest_lib engine_foundation engine_world engine_runtime era_simulation)
 
 engine_apply_compiler_options(engine_tests)
 

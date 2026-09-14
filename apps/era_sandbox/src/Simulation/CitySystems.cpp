@@ -114,25 +114,6 @@ bool canAfford(const World& world, BuildingType type) {
     return state.storage.canAfford(def.cost);
 }
 
-bool canPlace(const World& world, int x, int z, BuildingType type) {
-    if (!isInBounds(x, z) || type == BuildingType::None) {
-        return false;
-    }
-
-    auto& grid = world.resource<GridIndex>();
-    if (grid.cells[z][x].type != CellType::Empty) {
-        return false;
-    }
-
-    auto& state = world.resource<CityState>();
-    const BuildingDef& def = getBuildingDef(type);
-    if (static_cast<uint8_t>(def.requiredEra) > static_cast<uint8_t>(state.currentEra)) {
-        return false;
-    }
-
-    return canAfford(world, type);
-}
-
 float getNetRatePerMinute(const World& world, ResourceType type) {
     auto& state = world.resource<CityState>();
     const size_t idx = static_cast<size_t>(type);
@@ -185,7 +166,10 @@ bool evolveToNextEra(World& world) {
 }
 
 bool placeBuilding(World& world, int x, int z, BuildingType type) {
-    if (!canPlace(world, x, z, type)) return false;
+    if (!isInBounds(x, z) || type == BuildingType::None) return false;
+
+    auto& grid = world.resource<GridIndex>();
+    if (grid.cells[z][x].type != CellType::Empty) return false;
 
     auto& state = world.resource<CityState>();
     const BuildingDef& def = getBuildingDef(type);
@@ -212,7 +196,6 @@ bool placeBuilding(World& world, int x, int z, BuildingType type) {
         prod.cycleSeconds = def.production.cycleSeconds;
     }
 
-    auto& grid = world.resource<GridIndex>();
     grid.cells[z][x].type = (type == BuildingType::Road) ? CellType::Road : CellType::Building;
     grid.cells[z][x].entity = e;
 

@@ -3,6 +3,9 @@
 #include "engine/foundation/EventBus.hpp"
 #include "engine/foundation/Rng.hpp"
 #include "engine/foundation/TypeRegistry.hpp"
+#include "engine/world/CmdResult.hpp"
+#include "engine/world/CommandRegistry.hpp"
+#include "engine/world/CommandQueue.hpp"
 
 #include <entt/entt.hpp>
 #include <memory>
@@ -58,6 +61,14 @@ public:
 
     TypeRegistry& types() { return m_types; }
 
+    CommandRegistry& commands() { return m_commands; }
+    const CommandRegistry& commands() const { return m_commands; }
+
+    CommandQueue& commandQueue() { return m_commandQueue; }
+    const CommandQueue& commandQueue() const { return m_commandQueue; }
+
+    void dispatchCommands();
+
     template<class T> bool hasResource() const {
         return m_registry.ctx().contains<T>();
     }
@@ -81,6 +92,8 @@ private:
     std::unique_ptr<DeferredOps> m_deferred;
     std::vector<Rng> m_rngs;
     TypeRegistry m_types;
+    CommandRegistry m_commands;
+    CommandQueue m_commandQueue;
     Tick m_currentTick;
 };
 

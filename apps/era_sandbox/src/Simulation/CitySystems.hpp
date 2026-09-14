@@ -27,7 +27,6 @@ bool evolveToNextEra(World& world);
 // Queries
 bool isInBounds(int x, int z);
 bool canAfford(const World& world, BuildingType type);
-bool canPlace(const World& world, int x, int z, BuildingType type);
 bool canEvolve(const World& world);
 
 glm::vec3 getTownCenterPosition(const World& world);

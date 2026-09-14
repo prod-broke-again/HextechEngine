@@ -1,4 +1,5 @@
 #include "engine/runtime/ModuleRegistry.hpp"
+#include "engine/world/World.hpp"
 
 #include <algorithm>
 #include <iostream>
@@ -61,6 +62,12 @@ bool ModuleRegistry::build(World& world) {
     }
 
     m_sortedModules = std::move(sorted);
+    
+    // Register types and commands
+    for (auto* m : m_sortedModules) {
+        m->registerTypes(world.types());
+        m->registerCommands(world.commands());
+    }
 
     // Call onAttach in topologically sorted order
     for (auto* m : m_sortedModules) {

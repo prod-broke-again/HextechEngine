@@ -5,6 +5,7 @@
 #include "Camera/RtsCamera.hpp"
 #include "Graphics/ProceduralCityMeshes.hpp"
 #include "Simulation/CitySystems.hpp"
+#include "Simulation/CityCommands.hpp"
 #include "Simulation/CityEvents.hpp"
 #include "Simulation/Components.hpp"
 #include "engine/core/Input.hpp"
@@ -30,6 +31,7 @@ public:
         return deps;
     }
 
+    void registerCommands(CommandRegistry& registry) override;
     void onAttach(World& world) override;
     void onDetach(World& world) override;
     void tick(World& world) override;
@@ -40,7 +42,7 @@ private:
     void updateFrame(World& world, float deltaTime);
     bool renderFrame(World& world);
     void handleResize(const engine::WindowResizeEvent& ev);
-    void renderUi(World& world);
+    void renderUi(const World& world, CommandQueue& commands);
 
     void spawnVisualBuilding(const BuildingPlacedEvent& ev);
     void removeVisualBuilding(const BuildingRemovedEvent& ev);

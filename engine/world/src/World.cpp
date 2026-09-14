@@ -11,5 +11,19 @@ World::World() {
 
 World::~World() = default;
 
+void World::dispatchCommands() {
+    auto items = m_commandQueue.extract();
+    for (const auto& item : items) {
+        const auto* entry = m_commands.find(item.typeId);
+        if (!entry) {
+            continue;
+        }
+        CmdResult res = entry->validate(*this, item.data.get());
+        if (res.ok()) {
+            entry->apply(*this, item.data.get());
+        }
+    }
+}
+
 } // namespace engine
 

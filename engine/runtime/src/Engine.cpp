@@ -68,6 +68,9 @@ void Engine::run() {
 void Engine::tick() {
     m_world.advanceTick();
     
+    // CommandDispatch phase: validate and apply queued commands
+    m_world.dispatchCommands();
+
     for (auto* m : m_modules.sortedModules()) {
         m->tick(m_world);
     }

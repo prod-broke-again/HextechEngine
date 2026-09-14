@@ -1,0 +1,38 @@
+#pragma once
+
+#include "Simulation/EraData.hpp"
+#include "engine/world/CmdResult.hpp"
+#include "engine/world/CommandRegistry.hpp"
+
+namespace engine {
+class World;
+}
+
+namespace engine::era {
+
+struct PlaceBuildingCmd {
+    int x = 0;
+    int z = 0;
+    BuildingType type = BuildingType::None;
+};
+
+CmdResult validate(const World& world, const PlaceBuildingCmd& cmd);
+void apply(World& world, const PlaceBuildingCmd& cmd);
+
+struct DemolishBuildingCmd {
+    int x = 0;
+    int z = 0;
+};
+
+CmdResult validate(const World& world, const DemolishBuildingCmd& cmd);
+void apply(World& world, const DemolishBuildingCmd& cmd);
+
+struct EvolveEraCmd {
+};
+
+CmdResult validate(const World& world, const EvolveEraCmd& cmd);
+void apply(World& world, const EvolveEraCmd& cmd);
+
+void registerCityCommands(CommandRegistry& registry);
+
+} // namespace engine::era

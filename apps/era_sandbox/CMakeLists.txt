@@ -1,13 +1,35 @@
+add_library(era_simulation STATIC
+    src/Simulation/EraData.cpp
+    src/Simulation/CitySystems.cpp
+    src/Simulation/CityCommands.cpp
+)
+
+target_link_libraries(era_simulation PUBLIC
+    engine_world
+    glm::glm
+    EnTT::EnTT
+)
+
+target_include_directories(era_simulation PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+)
+
+engine_apply_compiler_options(era_simulation)
+
 add_executable(era_sandbox
     src/main.cpp
     src/EraSandboxModule.cpp
     src/Camera/RtsCamera.cpp
-    src/Simulation/EraData.cpp
-    src/Simulation/CitySystems.cpp
     src/Graphics/ProceduralCityMeshes.cpp
+    src/ui/TopHudPanel.cpp
+    src/ui/EvolutionBannerPanel.cpp
+    src/ui/BuildDockPanel.cpp
+    src/ui/InspectorPanel.cpp
+    src/ui/HoverTooltipPanel.cpp
 )
 
 target_link_libraries(era_sandbox PRIVATE
+    era_simulation
     engine_core
     engine_assets
     engine_ecs

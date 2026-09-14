@@ -7,6 +7,8 @@ namespace engine {
 
 class World;
 class Engine;
+class TypeRegistry;
+class CommandRegistry;
 
 class IModule {
 public:
@@ -14,6 +16,9 @@ public:
 
     virtual std::string_view name() const = 0;
     virtual std::span<const std::string_view> dependsOn() const { return {}; }
+
+    virtual void registerTypes(TypeRegistry&) {}
+    virtual void registerCommands(CommandRegistry&) {}
 
     virtual void onAttach(World& world) {}
     virtual void onDetach(World& world) {}
