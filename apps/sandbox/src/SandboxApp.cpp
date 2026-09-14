@@ -398,59 +398,6 @@ void SandboxApp::spawnScene() {
     spawnTargetSphere({rangeX, 1.25f, rangeZ + 0.7f}, {0.2f, 0.4f, 1.0f});
     spawnTargetSphere({rangeX, 1.25f, rangeZ + 2.0f}, {1.0f, 0.85f, 0.1f});
 
-    // 7. Showroom Turntable Stands & BMW Cars
-    const float standY = 0.8f + 0.2f; // on top of platform (Y=0.8) + halfHeight (0.2) = 1.0f
-    const float turntableRadius = 3.6f;
-    const float turntableHalfH = 0.2f;
-    const uint32_t turntableMesh = m_meshes->upload(MeshBuilder::cylinder(turntableRadius, turntableHalfH, 48, {0.18f, 0.20f, 0.24f}));
-    const uint32_t ringMeshCyan = m_meshes->upload(MeshBuilder::cylinder(turntableRadius + 0.08f, 0.04f, 48, {0.1f, 0.75f, 1.0f}));
-    const uint32_t ringMeshAmber = m_meshes->upload(MeshBuilder::cylinder(turntableRadius + 0.08f, 0.04f, 48, {1.0f, 0.75f, 0.15f}));
-
-    // Helper for non-colliding emissive visual meshes
-    auto spawnGlowingRing = [this](const std::string& name, const glm::vec3& pos, uint32_t meshId, const glm::vec3& tint, float emissive) {
-        MeshComponent mc{};
-        mc.mesh = meshId;
-        mc.tint = tint;
-        mc.roughness = 0.1f;
-        mc.metallic = 0.1f;
-        mc.emissiveIntensity = emissive;
-        const entt::entity ent = spawnMeshEntity(m_registry, mc, pos, {1.f, 1.f, 1.f});
-        m_registry.emplace<TagComponent>(ent, TagComponent{name});
-        return ent;
-    };
-
-    // Stand 1: BMW M3 GTR (Left turntable, X = -12.0)
-    const glm::vec3 stand1Pos{-12.0f, standY, -6.0f};
-    createStaticBoxEntity("Turntable1_Base", stand1Pos, {turntableRadius, turntableHalfH, turntableRadius}, turntableMesh, {0.18f, 0.20f, 0.24f}, 0.25f, 0.2f);
-    spawnGlowingRing("Turntable1_Rim", {stand1Pos.x, stand1Pos.y + turntableHalfH + 0.02f, stand1Pos.z}, ringMeshCyan, {0.1f, 0.75f, 1.0f}, 8.0f);
-
-    // Stand 2: BMW M3 NFS (Right turntable, X = +12.0)
-    const glm::vec3 stand2Pos{12.0f, standY, -6.0f};
-    createStaticBoxEntity("Turntable2_Base", stand2Pos, {turntableRadius, turntableHalfH, turntableRadius}, turntableMesh, {0.18f, 0.20f, 0.24f}, 0.25f, 0.2f);
-    spawnGlowingRing("Turntable2_Rim", {stand2Pos.x, stand2Pos.y + turntableHalfH + 0.02f, stand2Pos.z}, ringMeshAmber, {1.0f, 0.75f, 0.15f}, 8.0f);
-
-    // Car surface level: standY + turntableHalfH = 1.0f + 0.2f = 1.2f
-    const float carSpawnY = standY + turntableHalfH;
-    m_car1Entities = spawnGltfModel(m_registry, m_assets, *m_meshes, *m_textures,
-                                    "assets/bmw_m3_gtr.glb", {stand1Pos.x, carSpawnY, stand1Pos.z}, 4.8f);
-    m_car2Entities = spawnGltfModel(m_registry, m_assets, *m_meshes, *m_textures,
-                                    "assets/bmw_m3_nfs.glb", {stand2Pos.x, carSpawnY, stand2Pos.z}, 4.8f);
-
-    // Showroom Overhead Spotlights above each car
-    auto spawnShowroomSpotlight = [this](const std::string& name, const glm::vec3& pos, const glm::vec3& color, float intensity) {
-        const entt::entity lightEnt = m_registry.create();
-        m_registry.emplace<TagComponent>(lightEnt, TagComponent{name});
-        m_registry.emplace<TransformLocal>(lightEnt, TransformLocal{pos});
-        m_registry.emplace<TransformWorld>(lightEnt);
-        m_registry.emplace<PointLightComponent>(lightEnt, PointLightComponent{
-            .color = color,
-            .intensity = intensity,
-            .radius = 22.0f
-        });
-        m_demoPointLights.push_back(lightEnt);
-    };
-    spawnShowroomSpotlight("Showroom_Light_GTR", {stand1Pos.x, 6.2f, stand1Pos.z}, {0.9f, 0.95f, 1.0f}, 35.0f);
-    spawnShowroomSpotlight("Showroom_Light_NFS", {stand2Pos.x, 6.2f, stand2Pos.z}, {1.0f, 0.92f, 0.82f}, 35.0f);
 
     m_renderer.setLightDir(m_sunDirection);
 
@@ -708,27 +655,6 @@ void SandboxApp::updateFrame(float deltaTime) {
         AudioEngine::instance().updateListener(camTransform.translation, forward, up);
     }
 
-    if (m_rotateTurntables) {
-        m_carRotationAngle += deltaTime * m_turntableSpeed;
-        if (m_carRotationAngle > glm::two_pi<float>()) {
-            m_carRotationAngle -= glm::two_pi<float>();
-        }
-        const glm::quat carRot = glm::angleAxis(m_carRotationAngle, glm::vec3(0.f, 1.f, 0.f));
-        for (const entt::entity ent : m_car1Entities) {
-            if (m_registry.valid(ent)) {
-                if (auto* t = m_registry.try_get<TransformLocal>(ent)) {
-                    t->rotation = carRot;
-                }
-            }
-        }
-        for (const entt::entity ent : m_car2Entities) {
-            if (m_registry.valid(ent)) {
-                if (auto* t = m_registry.try_get<TransformLocal>(ent)) {
-                    t->rotation = carRot;
-                }
-            }
-        }
-    }
 
     if (!keyboardCaptured) {
         if (m_inputMap.actionPressed(m_input, Action::SpawnBox) ||
@@ -959,12 +885,6 @@ bool SandboxApp::renderFrame() {
         const glm::vec3 p = m_character.position();
         ImGui::Text("Pos: (%.2f, %.2f, %.2f)", p.x, p.y, p.z);
     }
-
-    ImGui::Separator();
-    ImGui::Text("Showroom Turntables:");
-    ImGui::Checkbox("Rotate Cars", &m_rotateTurntables);
-    ImGui::SameLine();
-    ImGui::SliderFloat("Speed", &m_turntableSpeed, 0.05f, 2.0f, "%.2f rad/s");
 
     ImGui::Separator();
     ImGui::Text("Physics Actions:");

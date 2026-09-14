@@ -75,11 +75,6 @@ private:
     MeshComponent m_sphereComp{};
     glm::vec3 m_sunDirection{-0.35f, -1.f, -0.25f};
 
-    std::vector<entt::entity> m_car1Entities;
-    std::vector<entt::entity> m_car2Entities;
-    float m_carRotationAngle = 0.0f;
-    float m_turntableSpeed = 0.35f;
-    bool m_rotateTurntables = true;
 
     bool m_animateLights = true;
     float m_lightAnimTime = 0.f;
