@@ -108,6 +108,10 @@ MeshCpuData createHoverQuadMesh() {
 
 } // namespace
 
+void EraSandboxModule::registerTypes(TypeRegistry& registry) {
+    CitySystems::registerCityTypes(registry);
+}
+
 void EraSandboxModule::registerCommands(CommandRegistry& registry) {
     registerCityCommands(registry);
 }

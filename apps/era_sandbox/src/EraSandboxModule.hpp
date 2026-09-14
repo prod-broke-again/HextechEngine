@@ -31,6 +31,7 @@ public:
         return deps;
     }
 
+    void registerTypes(TypeRegistry& registry) override;
     void registerCommands(CommandRegistry& registry) override;
     void onAttach(World& world) override;
     void onDetach(World& world) override;

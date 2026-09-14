@@ -63,6 +63,7 @@ public:
     void advanceTick() { m_currentTick.index++; }
 
     TypeRegistry& types() { return m_types; }
+    const TypeRegistry& types() const { return m_types; }
 
     CommandRegistry& commands() { return m_commands; }
     const CommandRegistry& commands() const { return m_commands; }

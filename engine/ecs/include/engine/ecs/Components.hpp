@@ -132,4 +132,7 @@ struct ParticleEmitterComponent {
     float velocitySpread = 1.0f;
 };
 
+class TypeRegistry;
+void registerEngineComponents(TypeRegistry& types);
+
 } // namespace engine

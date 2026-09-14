@@ -14,6 +14,7 @@
 #include "engine/renderer/vulkan/PbrRenderer.hpp"
 #include "engine/renderer/vulkan/PostProcessPipeline.hpp"
 #include "engine/renderer/vulkan/VulkanContext.hpp"
+#include "engine/foundation/TypeRegistry.hpp"
 #include "engine/vfx/ParticleSystem.hpp"
 
 #include <entt/entt.hpp>
@@ -50,6 +51,7 @@ private:
     Input m_input;
     entt::dispatcher m_dispatcher;
     entt::registry m_registry;
+    TypeRegistry m_types;
     VulkanContext m_vulkan;
     ImGuiLayer m_imgui;
     PbrRenderer m_renderer;

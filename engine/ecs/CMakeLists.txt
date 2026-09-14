@@ -1,6 +1,6 @@
 add_library(engine_ecs STATIC
     src/Systems.cpp
-    src/SceneSerializer.cpp
+    src/Components.cpp
 )
 
 target_include_directories(engine_ecs
@@ -10,6 +10,7 @@ target_include_directories(engine_ecs
 
 target_link_libraries(engine_ecs
     PUBLIC
+        engine_foundation
         engine_core
         engine_assets
         EnTT::EnTT

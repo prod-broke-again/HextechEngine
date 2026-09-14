@@ -18,9 +18,10 @@ add_executable(engine_tests
     world/CommandRegistry_test.cpp
     simulation/CityCommands_test.cpp
     determinism/Determinism_test.cpp
+    save/SaveModule_test.cpp
 )
 
-target_link_libraries(engine_tests PRIVATE doctest_lib engine_foundation engine_world engine_runtime era_simulation)
+target_link_libraries(engine_tests PRIVATE doctest_lib engine_foundation engine_world engine_runtime engine_save era_simulation)
 
 engine_apply_compiler_options(engine_tests)
 

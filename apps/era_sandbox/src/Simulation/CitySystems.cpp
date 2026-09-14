@@ -162,8 +162,51 @@ void registerSimulationTypes(World& /*world*/) {
     });
 }
 
+void registerCityTypes(TypeRegistry& types) {
+    types.registerComponent<BuildingComponent>("BuildingComponent", 1)
+        .field("type", &BuildingComponent::type);
+
+    types.registerComponent<GridPosition>("GridPosition", 1)
+        .field("x", &GridPosition::x)
+        .field("z", &GridPosition::z);
+
+    types.registerComponent<ResidenceComponent>("ResidenceComponent", 1)
+        .field("currentInhabitants", &ResidenceComponent::currentInhabitants)
+        .field("maxInhabitants", &ResidenceComponent::maxInhabitants)
+        .field("foodSatisfaction", &ResidenceComponent::foodSatisfaction)
+        .field("warmthSatisfaction", &ResidenceComponent::warmthSatisfaction)
+        .field("overallSatisfaction", &ResidenceComponent::overallSatisfaction)
+        .field("consumptionTimer", &ResidenceComponent::consumptionTimer);
+
+    types.registerComponent<ProductionComponent>("ProductionComponent", 1)
+        .field("progress", &ProductionComponent::progress)
+        .field("cycleSeconds", &ProductionComponent::cycleSeconds)
+        .field("isWorking", &ProductionComponent::isWorking)
+        .field("isBufferFull", &ProductionComponent::isBufferFull)
+        .field("internalBuffer", &ProductionComponent::internalBuffer)
+        .field("maxBuffer", &ProductionComponent::maxBuffer)
+        .field("hasCourierAssigned", &ProductionComponent::hasCourierAssigned)
+        .field("currentAlert", &ProductionComponent::currentAlert);
+
+    types.registerComponent<CarrierComponent>("CarrierComponent", 1)
+        .field("state", &CarrierComponent::state)
+        .field("targetBuilding", &CarrierComponent::targetBuilding)
+        .field("carriedResource", &CarrierComponent::carriedResource)
+        .field("carriedAmount", &CarrierComponent::carriedAmount)
+        .field("hasCargo", &CarrierComponent::hasCargo);
+
+    types.registerComponent<CarrierJourneyComponent>("CarrierJourneyComponent", 1)
+        .field("currentPos", &CarrierJourneyComponent::currentPos)
+        .field("startPos", &CarrierJourneyComponent::startPos)
+        .field("targetPos", &CarrierJourneyComponent::targetPos)
+        .field("progress", &CarrierJourneyComponent::progress)
+        .field("tripDuration", &CarrierJourneyComponent::tripDuration)
+        .field("bobbingTimer", &CarrierJourneyComponent::bobbingTimer);
+}
+
 void initCity(World& world) {
     registerSimulationTypes(world);
+    registerCityTypes(world.types());
     if(!world.hasResource<CityState>()) {
         world.emplaceResource<CityState>();
     }

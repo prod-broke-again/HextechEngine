@@ -3,6 +3,6 @@ add_library(engine_foundation
 )
 
 target_include_directories(engine_foundation PUBLIC include)
-target_link_libraries(engine_foundation PUBLIC EnTT::EnTT)
+target_link_libraries(engine_foundation PUBLIC EnTT::EnTT glm::glm)
 
 engine_apply_compiler_options(engine_foundation)

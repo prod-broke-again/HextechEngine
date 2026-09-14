@@ -9,7 +9,7 @@
 #include "engine/core/Log.hpp"
 #include "engine/core/Path.hpp"
 #include "engine/ecs/Components.hpp"
-#include "engine/ecs/SceneSerializer.hpp"
+#include "engine/modules/save/SaveModule.hpp"
 #include "engine/ecs/Systems.hpp"
 #include "engine/physics/PhysicsBridge.hpp"
 #include "engine/renderer/vulkan/ShaderHotReload.hpp"
@@ -188,6 +188,7 @@ bool SandboxApp::initEngine() {
     });
 
     m_time.reset();
+    registerEngineComponents(m_types);
     spawnScene();
     setCursorCapture(true);
     return true;
@@ -1173,7 +1174,7 @@ bool SandboxApp::renderFrame() {
 
 void SandboxApp::saveScene(const std::string& filename) {
     const std::filesystem::path scenePath = std::filesystem::path("assets/scenes") / filename;
-    if (SceneSerializer::serialize(scenePath, m_registry, m_sunDirection)) {
+    if (SaveModule::saveSceneJson(scenePath, m_registry, m_types, m_sunDirection)) {
         m_sceneStatusMessage = "Saved: " + scenePath.string();
         m_sceneStatusTimer = 4.0f;
     } else {
@@ -1192,59 +1193,92 @@ void SandboxApp::loadScene(const std::string& filename) {
 
     m_selectedEntity = entt::null;
     m_demoPointLights.clear();
+    destroyPhysicsBodies(m_registry, m_physics);
 
-    SceneResourceContext resCtx{};
-    resCtx.uploadMesh = [this](const MeshCpuData& cpuData) -> uint32_t {
-        return m_meshes->upload(cpuData);
-    };
-    resCtx.spawnModel = [this](const std::filesystem::path& path, const glm::vec3& pos, float targetSize) {
-        spawnGltfModel(m_registry, m_assets, *m_meshes, *m_textures, path, pos, targetSize);
-    };
-    resCtx.createBoxCollider = [this](entt::entity entity, const glm::vec3& halfExtents, bool isStatic, float mass) {
-        m_registry.emplace<RigidBodyComponent>(entity);
-        if (isStatic) {
-            m_registry.emplace<StaticColliderTag>(entity);
-            createStaticBox(m_physics, m_registry, entity, halfExtents);
-        } else {
-            createDynamicBox(m_physics, m_registry, entity, halfExtents, mass);
-        }
-    };
-    resCtx.createSphereCollider = [this](entt::entity entity, float radius, bool isStatic, float mass) {
-        m_registry.emplace<RigidBodyComponent>(entity);
-        if (isStatic) {
-            m_registry.emplace<StaticColliderTag>(entity);
-        } else {
-            createDynamicSphere(m_physics, m_registry, entity, radius, mass);
-        }
-    };
-    resCtx.createConvexHullCollider = [](entt::entity /*entity*/, float /*mass*/) {
-    };
-    resCtx.destroyPhysicsBody = [this](entt::entity entity) {
-        destroyPhysicsBody(m_physics, m_registry, entity);
-    };
-    resCtx.clearPhysicsBodies = [this]() {
-        destroyPhysicsBodies(m_registry, m_physics);
-    };
-    resCtx.teapotMeshData = nullptr;
-
-    if (SceneSerializer::deserialize(scenePath, m_registry, m_sunDirection, resCtx)) {
-        m_renderer.setLightDir(m_sunDirection);
-        auto lightView = m_registry.view<PointLightComponent>();
-        for (const auto lightEnt : lightView) {
-            m_demoPointLights.push_back(lightEnt);
-        }
-        auto camView = m_registry.view<TransformLocal, CameraComponent>();
-        if (camView.begin() != camView.end()) {
-            auto camEnt = *camView.begin();
-            m_character.setPosition(m_registry.get<TransformLocal>(camEnt).translation - glm::vec3(0.f, m_character.eyeHeight, 0.f));
-        }
-        m_sceneStatusMessage = "Loaded: " + scenePath.string();
-        m_sceneStatusTimer = 4.0f;
-    } else {
+    if (!SaveModule::loadSceneJson(scenePath, m_registry, m_types, m_sunDirection)) {
         m_sceneStatusMessage = "Error loading scene: " + scenePath.string();
         m_sceneStatusTimer = 4.0f;
+        return;
     }
+
+    // Re-upload GPU meshes: MeshComponent::mesh and baseColorTexture are transient
+    // and not stored in JSON. Rebuild them from MeshGeometryComponent.
+    auto geomView = m_registry.view<MeshGeometryComponent, MeshComponent>();
+    for (auto ent : geomView) {
+        auto& geom = geomView.get<MeshGeometryComponent>(ent);
+        auto& mc   = geomView.get<MeshComponent>(ent);
+
+        switch (geom.type) {
+        case MeshGeometryType::Box:
+            mc.mesh = m_meshes->upload(MeshBuilder::box(geom.params, mc.tint));
+            break;
+        case MeshGeometryType::Sphere:
+            mc.mesh = m_meshes->upload(MeshBuilder::sphere(geom.params.x, 16, 16, mc.tint));
+            break;
+        case MeshGeometryType::Plane:
+            mc.mesh = m_meshes->upload(MeshBuilder::plane(geom.params.x, mc.tint));
+            break;
+        case MeshGeometryType::Model:
+            if (!geom.assetPath.empty()) {
+                spawnGltfModel(m_registry, m_assets, *m_meshes, *m_textures,
+                               geom.assetPath, {}, 1.0f);
+            }
+            break;
+        default:
+            break;
+        }
+    }
+
+    // Rebuild physics colliders from ColliderComponent
+    auto colliderView = m_registry.view<ColliderComponent, TransformLocal>();
+    for (auto ent : colliderView) {
+        const auto& col = colliderView.get<ColliderComponent>(ent);
+        switch (col.shape) {
+        case ColliderShapeType::Box:
+            if (col.isStatic) {
+                if (!m_registry.any_of<RigidBodyComponent>(ent))
+                    m_registry.emplace<RigidBodyComponent>(ent, RigidBodyComponent{.bodyIndex = UINT32_MAX, .dynamic = false});
+                if (!m_registry.any_of<StaticColliderTag>(ent))
+                    m_registry.emplace<StaticColliderTag>(ent);
+                createStaticBox(m_physics, m_registry, ent, col.halfExtents);
+            } else {
+                if (!m_registry.any_of<RigidBodyComponent>(ent))
+                    m_registry.emplace<RigidBodyComponent>(ent, RigidBodyComponent{.bodyIndex = UINT32_MAX, .dynamic = true});
+                createDynamicBox(m_physics, m_registry, ent, col.halfExtents, col.mass);
+            }
+            break;
+        case ColliderShapeType::Sphere:
+            if (col.isStatic) {
+                if (!m_registry.any_of<RigidBodyComponent>(ent))
+                    m_registry.emplace<RigidBodyComponent>(ent, RigidBodyComponent{.bodyIndex = UINT32_MAX, .dynamic = false});
+                if (!m_registry.any_of<StaticColliderTag>(ent))
+                    m_registry.emplace<StaticColliderTag>(ent);
+            } else {
+                if (!m_registry.any_of<RigidBodyComponent>(ent))
+                    m_registry.emplace<RigidBodyComponent>(ent, RigidBodyComponent{.bodyIndex = UINT32_MAX, .dynamic = true});
+                createDynamicSphere(m_physics, m_registry, ent, col.radius, col.mass);
+            }
+            break;
+        default:
+            break;
+        }
+    }
+
+    m_renderer.setLightDir(m_sunDirection);
+    auto lightView = m_registry.view<PointLightComponent>();
+    for (const auto lightEnt : lightView) {
+        m_demoPointLights.push_back(lightEnt);
+    }
+    auto camView = m_registry.view<TransformLocal, CameraComponent>();
+    if (camView.begin() != camView.end()) {
+        auto camEnt = *camView.begin();
+        m_character.setPosition(m_registry.get<TransformLocal>(camEnt).translation -
+                                glm::vec3(0.f, m_character.eyeHeight, 0.f));
+    }
+    m_sceneStatusMessage = "Loaded: " + scenePath.string();
+    m_sceneStatusTimer = 4.0f;
 }
+
 
 void SandboxApp::resetScene() {
     m_selectedEntity = entt::null;

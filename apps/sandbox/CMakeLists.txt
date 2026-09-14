@@ -12,6 +12,8 @@ target_link_libraries(sandbox PRIVATE
     engine_physics
     engine_audio
     engine_vfx
+    engine_save
+    engine_foundation
     glfw
     glm::glm
     EnTT::EnTT
@@ -20,6 +22,8 @@ target_link_libraries(sandbox PRIVATE
 target_include_directories(sandbox PRIVATE
     ${CMAKE_SOURCE_DIR}/apps/sandbox/src
     ${CMAKE_SOURCE_DIR}/engine/core/include
+    ${CMAKE_SOURCE_DIR}/engine/foundation/include
+    ${CMAKE_SOURCE_DIR}/engine/modules/save/include
     ${CMAKE_SOURCE_DIR}/engine/integration/include
     ${CMAKE_SOURCE_DIR}/engine/renderer/vulkan/include
     ${CMAKE_SOURCE_DIR}/engine/assets/include

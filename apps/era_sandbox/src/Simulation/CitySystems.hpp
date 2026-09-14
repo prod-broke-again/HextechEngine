@@ -10,6 +10,7 @@ namespace engine::era::CitySystems {
 // Initialize the city state (e.g. at map creation or module attach)
 void initCity(World& world);
 void registerSimulationTypes(World& world);
+void registerCityTypes(TypeRegistry& types);
 
 // Core simulation loops (strictly taking Tick for determinism)
 void tickProduction(World& world, Tick tick);
