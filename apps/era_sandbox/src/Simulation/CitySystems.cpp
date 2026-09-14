@@ -1,3 +1,4 @@
+#include "engine/world/WorldHasher.hpp"
 #include "Simulation/CitySystems.hpp"
 #include "Simulation/Components.hpp"
 #include "Simulation/CityEvents.hpp"
@@ -81,7 +82,88 @@ static float computeTripDuration(const World& world, const glm::vec3& from, cons
     return std::max(1.2f, dist / std::max(0.5f, speed));
 }
 
+void registerSimulationTypes(World& /*world*/) {
+    WorldHasher::registerComponent<BuildingComponent>("BuildingComponent", [](const BuildingComponent& b, uint64_t& h) {
+        WorldHasher::hashPod(h, b.type);
+    });
+
+    WorldHasher::registerComponent<GridPosition>("GridPosition", [](const GridPosition& p, uint64_t& h) {
+        WorldHasher::hashPod(h, p.x);
+        WorldHasher::hashPod(h, p.z);
+    });
+
+    WorldHasher::registerComponent<ResidenceComponent>("ResidenceComponent", [](const ResidenceComponent& r, uint64_t& h) {
+        WorldHasher::hashPod(h, r.currentInhabitants);
+        WorldHasher::hashPod(h, r.maxInhabitants);
+        WorldHasher::hashPod(h, r.foodSatisfaction);
+        WorldHasher::hashPod(h, r.warmthSatisfaction);
+        WorldHasher::hashPod(h, r.overallSatisfaction);
+        WorldHasher::hashPod(h, r.consumptionTimer);
+    });
+
+    WorldHasher::registerComponent<ProductionComponent>("ProductionComponent", [](const ProductionComponent& p, uint64_t& h) {
+        WorldHasher::hashPod(h, p.progress);
+        WorldHasher::hashPod(h, p.cycleSeconds);
+        WorldHasher::hashPod(h, p.isWorking);
+        WorldHasher::hashPod(h, p.isBufferFull);
+        WorldHasher::hashPod(h, p.internalBuffer);
+        WorldHasher::hashPod(h, p.maxBuffer);
+        WorldHasher::hashPod(h, p.hasCourierAssigned);
+        WorldHasher::hashPod(h, p.currentAlert);
+    });
+
+    WorldHasher::registerComponent<CarrierComponent>("CarrierComponent", [](const CarrierComponent& c, uint64_t& h) {
+        WorldHasher::hashPod(h, c.state);
+        WorldHasher::hashPod(h, static_cast<uint32_t>(entt::to_integral(c.targetBuilding)));
+        WorldHasher::hashPod(h, c.carriedResource);
+        WorldHasher::hashPod(h, c.carriedAmount);
+        WorldHasher::hashPod(h, c.hasCargo);
+    });
+
+    WorldHasher::registerComponent<CarrierJourneyComponent>("CarrierJourneyComponent", [](const CarrierJourneyComponent& j, uint64_t& h) {
+        WorldHasher::hashPod(h, j.currentPos);
+        WorldHasher::hashPod(h, j.startPos);
+        WorldHasher::hashPod(h, j.targetPos);
+        WorldHasher::hashPod(h, j.progress);
+        WorldHasher::hashPod(h, j.tripDuration);
+        WorldHasher::hashPod(h, j.bobbingTimer);
+    });
+
+    WorldHasher::registerResource<CityState>("CityState", [](const CityState& s, uint64_t& h) {
+        for (float a : s.storage.amounts) {
+            WorldHasher::hashPod(h, a);
+        }
+        WorldHasher::hashPod(h, s.currentEra);
+        WorldHasher::hashPod(h, s.totalPopulation);
+        WorldHasher::hashPod(h, s.maxPopulation);
+        WorldHasher::hashPod(h, s.averageSatisfaction);
+        WorldHasher::hashPod(h, s.taxIncomePerMinute);
+        for (float p : s.productionRatesPerMin) {
+            WorldHasher::hashPod(h, p);
+        }
+        for (float c : s.consumptionRatesPerMin) {
+            WorldHasher::hashPod(h, c);
+        }
+    });
+
+    WorldHasher::registerResource<CarrierPool>("CarrierPool", [](const CarrierPool& p, uint64_t& h) {
+        WorldHasher::hashPod(h, p.activeCarrierCount);
+        WorldHasher::hashPod(h, p.totalCarrierCount);
+    });
+
+    WorldHasher::registerResource<GridIndex>("GridIndex", [](const GridIndex& g, uint64_t& h) {
+        for (int z = 0; z < GridIndex::kGridSize; ++z) {
+            for (int x = 0; x < GridIndex::kGridSize; ++x) {
+                const auto& cell = g.cells[z][x];
+                WorldHasher::hashPod(h, cell.type);
+                WorldHasher::hashPod(h, static_cast<uint32_t>(entt::to_integral(cell.entity)));
+            }
+        }
+    });
+}
+
 void initCity(World& world) {
+    registerSimulationTypes(world);
     if(!world.hasResource<CityState>()) {
         world.emplaceResource<CityState>();
     }
@@ -263,7 +345,11 @@ bool demolishBuilding(World& world, int x, int z) {
     return true;
 }
 
-void tickProduction(World& world, float dt) {
+void tickProduction(World& world, Tick /*tick*/) {
+    const float dt = Tick::dt;
+    world.registry().sort<BuildingComponent>([](entt::entity a, entt::entity b) {
+        return entt::to_integral(a) < entt::to_integral(b);
+    });
     auto& state = world.resource<CityState>();
     auto view = world.registry().view<BuildingComponent, GridPosition, ProductionComponent>();
 
@@ -365,7 +451,11 @@ void tickProduction(World& world, float dt) {
     }
 }
 
-void tickConsumption(World& world, float dt) {
+void tickConsumption(World& world, Tick /*tick*/) {
+    const float dt = Tick::dt;
+    world.registry().sort<ResidenceComponent>([](entt::entity a, entt::entity b) {
+        return entt::to_integral(a) < entt::to_integral(b);
+    });
     constexpr float kConsumptionInterval = 2.0f;
     auto& state = world.resource<CityState>();
     auto view = world.registry().view<BuildingComponent, ResidenceComponent>();
@@ -411,7 +501,11 @@ void tickConsumption(World& world, float dt) {
     }
 }
 
-void tickCarriers(World& world, float dt) {
+void tickCarriers(World& world, Tick /*tick*/) {
+    const float dt = Tick::dt;
+    world.registry().sort<CarrierComponent>([](entt::entity a, entt::entity b) {
+        return entt::to_integral(a) < entt::to_integral(b);
+    });
     auto& state = world.resource<CityState>();
     auto& pool = world.resource<CarrierPool>();
     const CarrierDef cDef = getCarrierDefForEra(state.currentEra);
@@ -573,10 +667,10 @@ void updateAggregateStats(World& world) {
     state.averageSatisfaction = (houseCount > 0) ? (sumSat / static_cast<float>(houseCount)) : 1.0f;
 }
 
-void update(World& world, float deltaTime) {
-    tickProduction(world, deltaTime);
-    tickConsumption(world, deltaTime);
-    tickCarriers(world, deltaTime);
+void update(World& world, Tick tick) {
+    tickProduction(world, tick);
+    tickConsumption(world, tick);
+    tickCarriers(world, tick);
     updateAggregateStats(world);
 }
 

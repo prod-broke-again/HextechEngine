@@ -58,6 +58,14 @@ public:
         return min + static_cast<int>(r % range);
     }
 
+    // State inspection and restoration for determinism/serialization
+    constexpr uint64_t state() const { return m_state; }
+    constexpr uint64_t inc() const { return m_inc; }
+    constexpr void setState(uint64_t stateValue, uint64_t incValue) {
+        m_state = stateValue;
+        m_inc = incValue;
+    }
+
 private:
     uint64_t m_state = 0x853c49e6748fea9bULL;
     uint64_t m_inc = 0xda3e39cb94b95bdbULL;

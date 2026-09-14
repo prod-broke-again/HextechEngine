@@ -17,7 +17,7 @@
 #include "engine/vfx/ParticleSystem.hpp"
 #include "engine/audio/AudioEngine.hpp"
 
-#include <unordered_map>
+#include <map>
 #include <memory>
 #include <iostream>
 
@@ -59,7 +59,7 @@ private:
     ProceduralCityMeshes m_cityMeshes;
 
     // Notice: NO m_simulation, NO parallel maps!
-    std::unordered_map<entt::entity, entt::entity> m_alertEntities; // map building entity -> alert indicator entity
+    std::map<entt::entity, entt::entity> m_alertEntities; // map building entity -> alert indicator entity
 
     static constexpr int kGridSize = 32;
     static constexpr float kTileSize = 1.0f;

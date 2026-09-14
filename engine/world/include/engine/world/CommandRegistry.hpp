@@ -16,6 +16,7 @@ public:
         virtual ~IEntry() = default;
         virtual CmdResult validate(const World& world, const void* cmdPtr) const = 0;
         virtual void apply(World& world, const void* cmdPtr) const = 0;
+        virtual std::shared_ptr<const void> createFromBytes(const void* bytes, size_t size) const = 0;
     };
 
     template <typename Cmd>
@@ -32,6 +33,17 @@ public:
 
         void apply(World& world, const void* cmdPtr) const override {
             applyFn(world, *static_cast<const Cmd*>(cmdPtr));
+        }
+
+        std::shared_ptr<const void> createFromBytes(const void* bytes, size_t size) const override {
+            if constexpr (sizeof(Cmd) > 0) {
+                if (size < sizeof(Cmd)) return nullptr;
+                auto ptr = std::make_shared<Cmd>();
+                std::memcpy(ptr.get(), bytes, sizeof(Cmd));
+                return ptr;
+            } else {
+                return std::make_shared<Cmd>();
+            }
         }
     };
 

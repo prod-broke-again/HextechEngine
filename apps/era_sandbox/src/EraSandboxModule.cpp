@@ -143,11 +143,12 @@ void EraSandboxModule::onDetach(World& world) {
 }
 
 void EraSandboxModule::tick(World& world) {
-    updateFrame(world, 1.0f / 30.0f);
+    CitySystems::update(world, world.tick());
 }
 
-void EraSandboxModule::render(World& world, float alpha) {
+void EraSandboxModule::render(World& world, float /*alpha*/) {
     if (world.resource<PlatformGLFW>().shouldClose()) return;
+    updateFrame(world, 1.0f / 30.0f);
     renderFrame(world);
 }
 void EraSandboxModule::spawnVisualBuilding(const BuildingPlacedEvent& ev) {
@@ -372,8 +373,6 @@ void EraSandboxModule::updateFrame(World& world, float deltaTime) {
         }
     }
 
-    CitySystems::update(*m_world, deltaTime);
-    m_world->events().drain(); // Apply all events
     m_world->resource<ParticleSystem>().update(deltaTime);
 
     auto cView = m_world->registry().view<CarrierComponent, CarrierJourneyComponent, TransformLocal>();

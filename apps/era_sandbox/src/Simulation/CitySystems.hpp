@@ -9,15 +9,16 @@ namespace engine::era::CitySystems {
 
 // Initialize the city state (e.g. at map creation or module attach)
 void initCity(World& world);
+void registerSimulationTypes(World& world);
 
-// Core simulation loops
-void tickProduction(World& world, float dt);
-void tickConsumption(World& world, float dt);
-void tickCarriers(World& world, float dt);
+// Core simulation loops (strictly taking Tick for determinism)
+void tickProduction(World& world, Tick tick);
+void tickConsumption(World& world, Tick tick);
+void tickCarriers(World& world, Tick tick);
 void updateAggregateStats(World& world);
 
 // Master update function
-void update(World& world, float deltaTime);
+void update(World& world, Tick tick);
 
 // Commands
 bool placeBuilding(World& world, int x, int z, BuildingType type);

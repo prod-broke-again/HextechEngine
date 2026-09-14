@@ -1,5 +1,6 @@
 add_library(engine_world STATIC
     src/World.cpp
+    src/WorldHasher.cpp
 )
 
 target_include_directories(engine_world PUBLIC include)

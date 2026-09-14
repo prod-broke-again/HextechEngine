@@ -46,8 +46,10 @@ private:
 
 class World {
 public:
-    World();
+    explicit World(uint64_t seed = 0);
     ~World();
+
+    void setSeed(uint64_t seed);
 
     entt::registry& registry() { return m_registry; }
     const entt::registry& registry() const { return m_registry; }
@@ -55,6 +57,7 @@ public:
     EventBus& events() { return m_events; }
     DeferredOps& deferred() { return *m_deferred; }
     Rng& rng(RngStream stream) { return m_rngs[static_cast<size_t>(stream)]; }
+    const Rng& rng(RngStream stream) const { return m_rngs[static_cast<size_t>(stream)]; }
     
     Tick tick() const { return m_currentTick; }
     void advanceTick() { m_currentTick.index++; }

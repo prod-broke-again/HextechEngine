@@ -24,6 +24,19 @@ public:
         m_items.push_back({id, std::make_shared<Cmd>(std::move(cmd))});
     }
 
+    void enqueueRaw(entt::id_type typeId, std::shared_ptr<const void> data) {
+        m_items.push_back({typeId, std::move(data)});
+    }
+
+    bool enqueueFromBytes(const CommandRegistry& registry, entt::id_type typeId, const void* bytes, size_t size) {
+        const auto* entry = registry.find(typeId);
+        if (!entry) return false;
+        auto ptr = entry->createFromBytes(bytes, size);
+        if (!ptr) return false;
+        enqueueRaw(typeId, std::move(ptr));
+        return true;
+    }
+
     bool empty() const { return m_items.empty(); }
     size_t size() const { return m_items.size(); }
 
