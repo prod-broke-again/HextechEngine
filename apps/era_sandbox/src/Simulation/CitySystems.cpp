@@ -50,7 +50,7 @@ static void syncCarrierPool(World& world) {
 glm::vec3 getTownCenterPosition(const World& world) {
     auto view = world.registry().view<const BuildingComponent, const GridPosition>();
     for (auto [e, b, pos] : view.each()) {
-        if (b.type == BuildingType::TownCenter) {
+        if (b.type == BuildingIds::TownCenter) {
             return {static_cast<float>(pos.x) + 0.5f, 0.0f, static_cast<float>(pos.z) + 0.5f};
         }
     }
@@ -84,7 +84,7 @@ static float computeTripDuration(const World& world, const glm::vec3& from, cons
 
 void registerSimulationTypes(World& /*world*/) {
     WorldHasher::registerComponent<BuildingComponent>("BuildingComponent", [](const BuildingComponent& b, uint64_t& h) {
-        WorldHasher::hashPod(h, b.type);
+        WorldHasher::hashPod(h, b.type.value());
     });
 
     WorldHasher::registerComponent<GridPosition>("GridPosition", [](const GridPosition& p, uint64_t& h) {
@@ -162,8 +162,28 @@ void registerSimulationTypes(World& /*world*/) {
     });
 }
 
+static void migrateBuildingComponent(void* data, uint32_t fromVersion) {
+    if (fromVersion == 1) {
+        auto* comp = reinterpret_cast<BuildingComponent*>(data);
+        uint8_t oldVal = static_cast<uint8_t>(comp->type.value() & 0xFF);
+        StringHash newHash = BuildingIds::None;
+        switch (oldVal) {
+            case 1: newHash = BuildingIds::TownCenter; break;
+            case 2: newHash = BuildingIds::Residence; break;
+            case 3: newHash = BuildingIds::Lumberjack; break;
+            case 4: newHash = BuildingIds::Fishery; break;
+            case 5: newHash = BuildingIds::StoneQuarry; break;
+            case 6: newHash = BuildingIds::WheatFarm; break;
+            case 7: newHash = BuildingIds::Bakery; break;
+            case 8: newHash = BuildingIds::Road; break;
+            default: newHash = BuildingIds::None; break;
+        }
+        comp->type = newHash;
+    }
+}
+
 void registerCityTypes(TypeRegistry& types) {
-    types.registerComponent<BuildingComponent>("BuildingComponent", 1)
+    types.registerComponent<BuildingComponent>("BuildingComponent", 2, &migrateBuildingComponent)
         .field("type", &BuildingComponent::type);
 
     types.registerComponent<GridPosition>("GridPosition", 1)
@@ -225,7 +245,7 @@ void initCity(World& world) {
     state.storage.set(ResourceType::Bread, 0.0f);
     state.storage.set(ResourceType::Gold, 25.0f);
 
-    placeBuilding(world, 15, 15, BuildingType::TownCenter);
+    placeBuilding(world, 15, 15, BuildingIds::TownCenter);
     syncCarrierPool(world);
 }
 
@@ -233,7 +253,7 @@ bool isInBounds(int x, int z) {
     return (x >= 0 && x < GridIndex::kGridSize && z >= 0 && z < GridIndex::kGridSize);
 }
 
-bool canAfford(const World& world, BuildingType type) {
+bool canAfford(const World& world, StringHash type) {
     const BuildingDef& def = getBuildingDef(type);
     auto& state = world.resource<CityState>();
     return state.storage.canAfford(def.cost);
@@ -277,7 +297,7 @@ bool evolveToNextEra(World& world) {
 
     auto view = world.registry().view<BuildingComponent, ResidenceComponent>();
     for (auto [e, b, res] : view.each()) {
-        if (b.type == BuildingType::Residence) {
+        if (b.type == BuildingIds::Residence) {
             res.maxInhabitants = 8;
             res.currentInhabitants = std::min(8, res.currentInhabitants + 2);
         }
@@ -290,8 +310,8 @@ bool evolveToNextEra(World& world) {
     return true;
 }
 
-bool placeBuilding(World& world, int x, int z, BuildingType type) {
-    if (!isInBounds(x, z) || type == BuildingType::None) return false;
+bool placeBuilding(World& world, int x, int z, StringHash type) {
+    if (!isInBounds(x, z) || type == BuildingIds::None) return false;
 
     auto& grid = world.resource<GridIndex>();
     if (grid.cells[z][x].type != CellType::Empty) return false;
@@ -310,10 +330,10 @@ bool placeBuilding(World& world, int x, int z, BuildingType type) {
     pos.x = x;
     pos.z = z;
 
-    if (type == BuildingType::Residence) {
+    if (type == BuildingIds::Residence || def.maxInhabitants > 0) {
         auto& res = registry.emplace<ResidenceComponent>(e);
-        res.currentInhabitants = 2;
-        res.maxInhabitants = (state.currentEra == EraType::BronzeAge) ? 8 : def.maxInhabitants;
+        res.currentInhabitants = std::min(2, def.maxInhabitants > 0 ? def.maxInhabitants : 2);
+        res.maxInhabitants = (state.currentEra == EraType::BronzeAge && type == BuildingIds::Residence) ? 8 : def.maxInhabitants;
     }
 
     if (def.production.outputPerMinute > 0.0f) {
@@ -321,7 +341,7 @@ bool placeBuilding(World& world, int x, int z, BuildingType type) {
         prod.cycleSeconds = def.production.cycleSeconds;
     }
 
-    grid.cells[z][x].type = (type == BuildingType::Road) ? CellType::Road : CellType::Building;
+    grid.cells[z][x].type = (type == BuildingIds::Road || def.category == BuildingCategory::Infrastructure) ? CellType::Road : CellType::Building;
     grid.cells[z][x].entity = e;
 
     world.events().enqueue<BuildingPlacedEvent>({e, x, z, type});
@@ -342,7 +362,7 @@ bool demolishBuilding(World& world, int x, int z) {
     if (e == entt::null || !registry.valid(e)) return false;
 
     const BuildingComponent& b = registry.get<BuildingComponent>(e);
-    if (b.type == BuildingType::TownCenter) return false;
+    if (b.type == BuildingIds::TownCenter) return false;
 
     // Refund 50%
     auto& state = world.resource<CityState>();
@@ -504,7 +524,7 @@ void tickConsumption(World& world, Tick /*tick*/) {
     auto view = world.registry().view<BuildingComponent, ResidenceComponent>();
 
     for (auto [e, b, res] : view.each()) {
-        if (b.type != BuildingType::Residence) continue;
+        if (b.type != BuildingIds::Residence) continue;
 
         res.consumptionTimer += dt;
         if (res.consumptionTimer >= kConsumptionInterval) {
@@ -679,7 +699,7 @@ void updateAggregateStats(World& world) {
         const auto& b = bView.get<BuildingComponent>(e);
         const BuildingDef& def = getBuildingDef(b.type);
 
-        if (b.type == BuildingType::Residence) {
+        if (b.type == BuildingIds::Residence || def.maxInhabitants > 0) {
             if(auto* res = world.registry().try_get<ResidenceComponent>(e)) {
                 totalPop += res->currentInhabitants;
                 maxPop += res->maxInhabitants;

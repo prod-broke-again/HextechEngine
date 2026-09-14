@@ -1,0 +1,47 @@
+[
+  {
+    "id": "lumberjack_wood",
+    "name": "Timber Harvesting",
+    "inputResource": "Wood",
+    "inputPerMinute": 0.0,
+    "outputResource": "Wood",
+    "outputPerMinute": 3.0,
+    "cycleSeconds": 5.0
+  },
+  {
+    "id": "fishery_fish",
+    "name": "Coastal Trapping",
+    "inputResource": "Fish",
+    "inputPerMinute": 0.0,
+    "outputResource": "Fish",
+    "outputPerMinute": 2.0,
+    "cycleSeconds": 6.0
+  },
+  {
+    "id": "stone_quarry_stone",
+    "name": "Stone Quarrying",
+    "inputResource": "Stone",
+    "inputPerMinute": 0.0,
+    "outputResource": "Stone",
+    "outputPerMinute": 2.0,
+    "cycleSeconds": 6.0
+  },
+  {
+    "id": "wheat_farm_grain",
+    "name": "Grain Harvesting",
+    "inputResource": "Grain",
+    "inputPerMinute": 0.0,
+    "outputResource": "Grain",
+    "outputPerMinute": 3.0,
+    "cycleSeconds": 5.0
+  },
+  {
+    "id": "bakery_bread",
+    "name": "Bread Baking",
+    "inputResource": "Grain",
+    "inputPerMinute": 2.0,
+    "outputResource": "Bread",
+    "outputPerMinute": 2.0,
+    "cycleSeconds": 6.0
+  }
+]

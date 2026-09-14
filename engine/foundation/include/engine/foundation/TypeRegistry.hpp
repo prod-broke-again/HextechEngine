@@ -51,7 +51,7 @@ constexpr FieldType deduceFieldType() {
         return FieldType::UInt16;
     } else if constexpr (std::is_same_v<CleanT, int32_t> || std::is_same_v<CleanT, int> || std::is_same_v<CleanT, long>) {
         return FieldType::Int32;
-    } else if constexpr (std::is_same_v<CleanT, uint32_t> || std::is_same_v<CleanT, unsigned int> || std::is_same_v<CleanT, unsigned long>) {
+    } else if constexpr (std::is_same_v<CleanT, uint32_t> || std::is_same_v<CleanT, unsigned int> || std::is_same_v<CleanT, unsigned long> || std::is_same_v<CleanT, StringHash>) {
         return FieldType::UInt32;
     } else if constexpr (std::is_same_v<CleanT, int64_t> || std::is_same_v<CleanT, long long>) {
         return FieldType::Int64;

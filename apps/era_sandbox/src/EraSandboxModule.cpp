@@ -127,6 +127,7 @@ void EraSandboxModule::onAttach(World& world) {
     world.events().connect<BuildingStatusEvent, &EraSandboxModule::spawnAlertIndicator>(this);
     world.events().connect<EraEvolvedEvent, &EraSandboxModule::onEraEvolved>(this);
 
+    initEraData();
     CitySystems::initCity(world);
 
     setupScene(world);
@@ -173,7 +174,7 @@ void EraSandboxModule::spawnVisualBuilding(const BuildingPlacedEvent& ev) {
     const float randomYaw = (static_cast<float>((ev.gridX * 73856093) ^ (ev.gridZ * 19349663)) / static_cast<float>(0xFFFFFFFF)) * 6.28f;
     t.rotation = glm::angleAxis(randomYaw, glm::vec3(0.0f, 1.0f, 0.0f));
 
-    if (ev.type == BuildingType::TownCenter) {
+    if (ev.type == BuildingIds::TownCenter) {
         mc.tint = glm::vec3(1.1f, 1.0f, 0.8f);
     }
 }
@@ -280,7 +281,7 @@ void EraSandboxModule::setupScene(World& world) {
     m_world->registry().emplace<TransformWorld>(m_ghostEntity);
 
     MeshComponent ghostComp{};
-    ghostComp.mesh = m_cityMeshes.getBuildingMesh(BuildingType::Residence, world.resource<CityState>().currentEra);
+    ghostComp.mesh = m_cityMeshes.getBuildingMesh(BuildingIds::Residence, world.resource<CityState>().currentEra);
     ghostComp.tint = glm::vec3(0.3f, 1.0f, 0.3f);
     ghostComp.emissiveIntensity = 0.8f;
     ghostComp.roughness = 0.4f;
@@ -357,10 +358,10 @@ void EraSandboxModule::updateFrame(World& world, float deltaTime) {
                 if (grid.cells[m_hoverZ][m_hoverX].entity == m_inspectedBuildingId) {
                     m_inspectedBuildingId = entt::null;
                 }
-            } else if (m_selectedBuildType != BuildingType::None) {
+            } else if (m_selectedBuildType != BuildingIds::None) {
                 m_world->commandQueue().enqueue(PlaceBuildingCmd{m_hoverX, m_hoverZ, m_selectedBuildType});
                 if (!m_world->resource<Input>().keyDown(GLFW_KEY_LEFT_SHIFT)) {
-                    m_selectedBuildType = BuildingType::None;
+                    m_selectedBuildType = BuildingIds::None;
                 }
             } else {
                 const auto& grid = m_world->resource<GridIndex>();
@@ -371,10 +372,15 @@ void EraSandboxModule::updateFrame(World& world, float deltaTime) {
     }
 
     if (m_world->resource<Input>().mouseButtonPressed(GLFW_MOUSE_BUTTON_RIGHT) || m_world->resource<Input>().keyPressed(GLFW_KEY_ESCAPE)) {
-        if (m_selectedBuildType != BuildingType::None || m_demolishMode) {
-            m_selectedBuildType = BuildingType::None;
+        if (m_selectedBuildType != BuildingIds::None || m_demolishMode) {
+            m_selectedBuildType = BuildingIds::None;
             m_demolishMode = false;
         }
+    }
+
+    if (m_world->resource<Input>().keyPressed(GLFW_KEY_F5)) {
+        std::cout << "[EraSandboxModule] F5 pressed: reloading configuration data...\n";
+        m_world->commandQueue().enqueue(ReloadDataCmd{});
     }
 
     m_world->resource<ParticleSystem>().update(deltaTime);
@@ -440,7 +446,7 @@ void EraSandboxModule::updateFrame(World& world, float deltaTime) {
         auto& t = m_world->registry().get<TransformLocal>(m_ghostEntity);
         auto& mc = m_world->registry().get<MeshComponent>(m_ghostEntity);
 
-        if (m_selectedBuildType != BuildingType::None && m_hasHoverTile) {
+        if (m_selectedBuildType != BuildingIds::None && m_hasHoverTile) {
             t.translation = glm::vec3(
                 static_cast<float>(m_hoverX) * kTileSize + 0.5f * kTileSize,
                 0.0f,
@@ -473,6 +479,17 @@ void EraSandboxModule::renderUi(const World& world, CommandQueue& commands) {
     ui::drawEvolutionBanner(world, commands, winWidth);
     ui::drawBuildDock(world, commands, winWidth, winHeight, m_selectedBuildType, m_demolishMode, m_inspectedBuildingId);
     ui::drawInspector(world, commands, winWidth, m_inspectedBuildingId);
+
+    // Quick debug hot-reload trigger in UI
+    ImGui::SetNextWindowPos(ImVec2(winWidth - 110.0f, winHeight - 55.0f), ImGuiCond_Always);
+    ImGui::SetNextWindowBgAlpha(0.6f);
+    if (ImGui::Begin("DebugDataReload", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_AlwaysAutoResize)) {
+        if (ImGui::Button("Reload (F5)")) {
+            commands.enqueue(ReloadDataCmd{});
+        }
+    }
+    ImGui::End();
+
     ui::drawHoverTooltip(world, m_hasHoverTile, m_hoverX, m_hoverZ, m_selectedBuildType, m_demolishMode, m_inspectedBuildingId);
 }
 

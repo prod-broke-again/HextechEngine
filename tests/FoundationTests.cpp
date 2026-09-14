@@ -20,13 +20,16 @@ TEST_CASE("Result - Value semantics") {
     CHECK(res2.error() == "error");
 }
 
-TEST_CASE("CmdResult - Void semantics") {
-    CmdResult res1 = CmdSuccess();
+TEST_CASE("Result - Void semantics") {
+    Result<void, int> res1 = Result<void, int>::ok();
     CHECK(res1.isOk() == true);
+    CHECK(static_cast<bool>(res1) == true);
+    CHECK_FALSE(!res1);
 
-    CmdResult res2 = CmdError(CmdErrorCode::InvalidParameters);
+    Result<void, int> res2 = Result<void, int>::error(404);
     CHECK(res2.isOk() == false);
-    CHECK(res2.error() == CmdErrorCode::InvalidParameters);
+    CHECK(!res2);
+    CHECK(res2.error() == 404);
 }
 
 TEST_CASE("StringHash - Deterministic Hashing") {

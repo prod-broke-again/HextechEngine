@@ -10,8 +10,13 @@ namespace engine::era {
 // ----------------------------------------------------------------------------
 
 CmdResult validate(const World& world, const PlaceBuildingCmd& cmd) {
-    if (cmd.type == BuildingType::None || static_cast<size_t>(cmd.type) >= kBuildingTypeCount) {
+    if (cmd.type == BuildingIds::None) {
         return CmdResult::fail(CmdStatus::RequirementsNotMet, "Invalid building type");
+    }
+
+    const BuildingDef& def = getBuildingDef(cmd.type);
+    if (def.id == BuildingIds::None) {
+        return CmdResult::fail(CmdStatus::RequirementsNotMet, "Unknown building type");
     }
 
     if (!CitySystems::isInBounds(cmd.x, cmd.z)) {
@@ -24,7 +29,6 @@ CmdResult validate(const World& world, const PlaceBuildingCmd& cmd) {
     }
 
     const auto& state = world.resource<CityState>();
-    const BuildingDef& def = getBuildingDef(cmd.type);
     if (static_cast<uint8_t>(def.requiredEra) > static_cast<uint8_t>(state.currentEra)) {
         return CmdResult::fail(CmdStatus::RequirementsNotMet, "Era requirement not met");
     }
@@ -62,7 +66,7 @@ CmdResult validate(const World& world, const DemolishBuildingCmd& cmd) {
     }
 
     const auto& b = registry.get<BuildingComponent>(e);
-    if (b.type == BuildingType::TownCenter) {
+    if (b.type == BuildingIds::TownCenter) {
         return CmdResult::fail(CmdStatus::CannotDemolishTownCenter, "Cannot demolish Town Center");
     }
 
@@ -102,6 +106,18 @@ void apply(World& world, const EvolveEraCmd& /*cmd*/) {
 }
 
 // ----------------------------------------------------------------------------
+// ReloadDataCmd
+// ----------------------------------------------------------------------------
+
+CmdResult validate(const World& /*world*/, const ReloadDataCmd& /*cmd*/) {
+    return CmdResult::success();
+}
+
+void apply(World& /*world*/, const ReloadDataCmd& /*cmd*/) {
+    reloadEraData();
+}
+
+// ----------------------------------------------------------------------------
 // Registration
 // ----------------------------------------------------------------------------
 
@@ -109,6 +125,7 @@ void registerCityCommands(CommandRegistry& registry) {
     registry.registerCommand<PlaceBuildingCmd>(&validate, &apply);
     registry.registerCommand<DemolishBuildingCmd>(&validate, &apply);
     registry.registerCommand<EvolveEraCmd>(&validate, &apply);
+    registry.registerCommand<ReloadDataCmd>(&validate, &apply);
 }
 
 } // namespace engine::era

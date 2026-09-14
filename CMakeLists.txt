@@ -16,6 +16,7 @@ add_subdirectory(engine/foundation)
 add_subdirectory(engine/world)
 add_subdirectory(engine/runtime)
 add_subdirectory(engine/modules/save)
+add_subdirectory(engine/modules/data)
 
 add_subdirectory(engine/core)
 add_subdirectory(engine/renderer/vulkan)

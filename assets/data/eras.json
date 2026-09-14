@@ -1,0 +1,59 @@
+[
+  {
+    "id": "StoneAge",
+    "name": "Stone Age",
+    "requiredPopulation": 12,
+    "evolutionRequirements": [
+      {
+        "resource": "Wood",
+        "requiredAmount": 25.0
+      },
+      {
+        "resource": "Fish",
+        "requiredAmount": 20.0
+      }
+    ],
+    "carrier": {
+      "speed": 2.2,
+      "roadSpeedMultiplier": 1.4,
+      "capacity": 2
+    },
+    "carrierPoolSize": 2,
+    "unlockedBuildings": [
+      "residence",
+      "lumberjack",
+      "fishery",
+      "road"
+    ]
+  },
+  {
+    "id": "BronzeAge",
+    "name": "Bronze Age",
+    "requiredPopulation": 30,
+    "evolutionRequirements": [
+      {
+        "resource": "Stone",
+        "requiredAmount": 60.0
+      },
+      {
+        "resource": "Bread",
+        "requiredAmount": 40.0
+      }
+    ],
+    "carrier": {
+      "speed": 3.4,
+      "roadSpeedMultiplier": 1.4,
+      "capacity": 4
+    },
+    "carrierPoolSize": 4,
+    "unlockedBuildings": [
+      "residence",
+      "lumberjack",
+      "fishery",
+      "road",
+      "stone_quarry",
+      "wheat_farm",
+      "bakery"
+    ]
+  }
+]

@@ -22,13 +22,13 @@ void updateAggregateStats(World& world);
 void update(World& world, Tick tick);
 
 // Commands
-bool placeBuilding(World& world, int x, int z, BuildingType type);
+bool placeBuilding(World& world, int x, int z, StringHash type);
 bool demolishBuilding(World& world, int x, int z);
 bool evolveToNextEra(World& world);
 
 // Queries
 bool isInBounds(int x, int z);
-bool canAfford(const World& world, BuildingType type);
+bool canAfford(const World& world, StringHash type);
 bool canEvolve(const World& world);
 
 glm::vec3 getTownCenterPosition(const World& world);

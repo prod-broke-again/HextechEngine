@@ -30,12 +30,12 @@ void drawInspector(
     ImGui::SetNextWindowBgAlpha(0.9f);
 
     if (ImGui::Begin("Inspector", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_AlwaysAutoResize)) {
-        ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.2f, 1.0f), "%s", def.name.data());
+        ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.2f, 1.0f), "%s", def.name.c_str());
         ImGui::Text("Position: [%d, %d]", pos.x, pos.z);
         ImGui::Separator();
         ImGui::Spacing();
 
-        if (b.type == BuildingType::TownCenter) {
+        if (b.type == BuildingIds::TownCenter) {
             ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "TOWN CENTER HUB");
             ImGui::Text("Current Era: %s", getEraName(state.currentEra).data());
             
@@ -73,7 +73,7 @@ void drawInspector(
                 }
                 ImGui::TreePop();
             }
-        } else if (b.type == BuildingType::Residence) {
+        } else if (b.type == BuildingIds::Residence || def.maxInhabitants > 0) {
             if (const auto* res = world.registry().try_get<ResidenceComponent>(inspectedBuilding)) {
                 ImGui::Text("Inhabitants: %d / %d", res->currentInhabitants, res->maxInhabitants);
                 ImGui::Text("Food (Fish): %.0f%%", res->foodSatisfaction * 100.0f);
@@ -104,7 +104,7 @@ void drawInspector(
         ImGui::Separator();
         ImGui::Spacing();
 
-        if (b.type != BuildingType::TownCenter) {
+        if (b.type != BuildingIds::TownCenter) {
             ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.7f, 0.2f, 0.2f, 1.0f));
             if (ImGui::Button("Demolish Building", ImVec2(-1.0f, 30.0f))) {
                 commands.enqueue(DemolishBuildingCmd{pos.x, pos.z});

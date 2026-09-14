@@ -19,7 +19,7 @@ struct GridPosition {
 };
 
 struct BuildingComponent {
-    BuildingType type = BuildingType::None;
+    StringHash type = BuildingIds::None;
 };
 
 struct ResidenceComponent {

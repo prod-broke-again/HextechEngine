@@ -17,7 +17,7 @@ struct BuildingPlacedEvent {
     entt::entity entity = entt::null;
     int gridX = 0;
     int gridZ = 0;
-    BuildingType type = BuildingType::None;
+    StringHash type = BuildingIds::None;
 };
 
 struct BuildingRemovedEvent {
@@ -40,7 +40,7 @@ struct EraEvolvedEvent {
 
 struct BuildingStatusEvent {
     entt::entity entity = entt::null;
-    BuildingType buildingType = BuildingType::None;
+    StringHash buildingType = BuildingIds::None;
     BuildingAlertKind alert = BuildingAlertKind::None;
     bool active = false; // true = alert raised, false = alert resolved/cleared
     int gridX = 0;

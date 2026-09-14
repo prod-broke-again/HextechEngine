@@ -18,8 +18,15 @@ public:
     // Error constructor
     Result(E error) : m_data(std::move(error)) {}
 
+    static Result ok(T val) { return Result(std::move(val)); }
+    static Result error(E err) { return Result(std::move(err)); }
+
     bool isOk() const { return std::holds_alternative<T>(m_data); }
     bool isErr() const { return std::holds_alternative<E>(m_data); }
+    bool isError() const { return isErr(); }
+
+    explicit operator bool() const { return isOk(); }
+    bool operator!() const { return isErr(); }
 
     T& value() {
         if (!isOk()) throw std::runtime_error("Result is error");
@@ -52,8 +59,15 @@ public:
     Result() : m_isOk(true) {}
     Result(E error) : m_isOk(false), m_error(std::move(error)) {}
 
+    static Result ok() { return Result(); }
+    static Result error(E err) { return Result(std::move(err)); }
+
     bool isOk() const { return m_isOk; }
     bool isErr() const { return !m_isOk; }
+    bool isError() const { return isErr(); }
+
+    explicit operator bool() const { return isOk(); }
+    bool operator!() const { return isErr(); }
 
     E& error() {
         if (!isErr()) throw std::runtime_error("Result is ok");
@@ -69,26 +83,5 @@ private:
     bool m_isOk;
     E m_error{};
 };
-
-enum class CmdErrorCode {
-    Success = 0,
-    InvalidParameters,
-    NotEnoughResources,
-    EntityNotFound,
-    InvalidState,
-    NotAllowed
-};
-
-// Helper for commands
-using CmdResult = Result<void, CmdErrorCode>;
-
-// Helpers for returning
-inline CmdResult CmdSuccess() {
-    return CmdResult();
-}
-
-inline CmdResult CmdError(CmdErrorCode code) {
-    return CmdResult(code);
-}
 
 } // namespace engine

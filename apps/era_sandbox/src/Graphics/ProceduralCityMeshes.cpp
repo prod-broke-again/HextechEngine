@@ -349,9 +349,7 @@ MeshCpuData buildAlertIconMesh() {
 } // namespace
 
 void ProceduralCityMeshes::init(GpuMeshCache& cache) {
-    for (auto& eraArr : m_buildingMeshes) {
-        eraArr.fill(engine::kInvalidGpuMesh);
-    }
+    m_buildingMeshes.clear();
     m_carrierMeshes.fill(engine::kInvalidGpuMesh);
 
     m_alertIconMesh = cache.upload(buildAlertIconMesh());
@@ -364,37 +362,45 @@ void ProceduralCityMeshes::init(GpuMeshCache& cache) {
     const uint32_t bakeryMesh = cache.upload(buildBakeryMesh());
     const uint32_t roadMesh = cache.upload(buildRoadMesh());
 
-    // 2. Stone Age building meshes
-    m_buildingMeshes[static_cast<size_t>(EraType::StoneAge)][static_cast<size_t>(BuildingType::TownCenter)] = cache.upload(buildCampfireMesh());
-    m_buildingMeshes[static_cast<size_t>(EraType::StoneAge)][static_cast<size_t>(BuildingType::Residence)] = cache.upload(buildResidenceStoneAgeMesh());
-    m_buildingMeshes[static_cast<size_t>(EraType::StoneAge)][static_cast<size_t>(BuildingType::Lumberjack)] = lumberjackMesh;
-    m_buildingMeshes[static_cast<size_t>(EraType::StoneAge)][static_cast<size_t>(BuildingType::Fishery)] = fisheryMesh;
-    m_buildingMeshes[static_cast<size_t>(EraType::StoneAge)][static_cast<size_t>(BuildingType::StoneQuarry)] = quarryMesh;
-    m_buildingMeshes[static_cast<size_t>(EraType::StoneAge)][static_cast<size_t>(BuildingType::WheatFarm)] = farmMesh;
-    m_buildingMeshes[static_cast<size_t>(EraType::StoneAge)][static_cast<size_t>(BuildingType::Bakery)] = bakeryMesh;
-    m_buildingMeshes[static_cast<size_t>(EraType::StoneAge)][static_cast<size_t>(BuildingType::Road)] = roadMesh;
+    // 2. Register building meshes by StringHash
+    m_buildingMeshes[BuildingIds::TownCenter] = {cache.upload(buildCampfireMesh()), cache.upload(buildTownCenterBronzeAgeMesh())};
+    m_buildingMeshes[BuildingIds::Residence] = {cache.upload(buildResidenceStoneAgeMesh()), cache.upload(buildResidenceBronzeAgeMesh())};
+    m_buildingMeshes[BuildingIds::Lumberjack] = {lumberjackMesh, lumberjackMesh};
+    m_buildingMeshes[BuildingIds::Fishery] = {fisheryMesh, fisheryMesh};
+    m_buildingMeshes[BuildingIds::StoneQuarry] = {quarryMesh, quarryMesh};
+    m_buildingMeshes[BuildingIds::WheatFarm] = {farmMesh, farmMesh};
+    m_buildingMeshes[BuildingIds::Bakery] = {bakeryMesh, bakeryMesh};
+    m_buildingMeshes[BuildingIds::Road] = {roadMesh, roadMesh};
 
-    // 3. Bronze Age upgraded building meshes
-    m_buildingMeshes[static_cast<size_t>(EraType::BronzeAge)][static_cast<size_t>(BuildingType::TownCenter)] = cache.upload(buildTownCenterBronzeAgeMesh());
-    m_buildingMeshes[static_cast<size_t>(EraType::BronzeAge)][static_cast<size_t>(BuildingType::Residence)] = cache.upload(buildResidenceBronzeAgeMesh());
-    m_buildingMeshes[static_cast<size_t>(EraType::BronzeAge)][static_cast<size_t>(BuildingType::Lumberjack)] = lumberjackMesh;
-    m_buildingMeshes[static_cast<size_t>(EraType::BronzeAge)][static_cast<size_t>(BuildingType::Fishery)] = fisheryMesh;
-    m_buildingMeshes[static_cast<size_t>(EraType::BronzeAge)][static_cast<size_t>(BuildingType::StoneQuarry)] = quarryMesh;
-    m_buildingMeshes[static_cast<size_t>(EraType::BronzeAge)][static_cast<size_t>(BuildingType::WheatFarm)] = farmMesh;
-    m_buildingMeshes[static_cast<size_t>(EraType::BronzeAge)][static_cast<size_t>(BuildingType::Bakery)] = bakeryMesh;
-    m_buildingMeshes[static_cast<size_t>(EraType::BronzeAge)][static_cast<size_t>(BuildingType::Road)] = roadMesh;
-
-    // 4. Courier / Worker unit meshes
+    // 3. Courier / Worker unit meshes
     m_carrierMeshes[static_cast<size_t>(EraType::StoneAge)] = cache.upload(buildCarrierStoneAgeMesh());
     m_carrierMeshes[static_cast<size_t>(EraType::BronzeAge)] = cache.upload(buildCarrierBronzeAgeMesh());
 }
 
-uint32_t ProceduralCityMeshes::getBuildingMesh(BuildingType type, EraType era) const {
+uint32_t ProceduralCityMeshes::getBuildingMesh(StringHash type, EraType era) const {
     const size_t eraIdx = static_cast<size_t>(era);
-    const size_t bIdx = static_cast<size_t>(type);
-    if (eraIdx < kEraCount && bIdx < kBuildingTypeCount) {
-        return m_buildingMeshes[eraIdx][bIdx];
+    if (eraIdx >= kEraCount) return engine::kInvalidGpuMesh;
+
+    auto it = m_buildingMeshes.find(type);
+    if (it != m_buildingMeshes.end()) {
+        return it->second[eraIdx];
     }
+
+    // Check if BuildingDef has a custom mesh identifier
+    const auto& def = getBuildingDef(type);
+    if (!def.mesh.empty()) {
+        auto meshIt = m_buildingMeshes.find(StringHash(def.mesh));
+        if (meshIt != m_buildingMeshes.end()) {
+            return meshIt->second[eraIdx];
+        }
+    }
+
+    // Default fallback mesh for unknown buildings
+    auto fallbackIt = m_buildingMeshes.find(BuildingIds::Lumberjack);
+    if (fallbackIt != m_buildingMeshes.end()) {
+        return fallbackIt->second[eraIdx];
+    }
+
     return engine::kInvalidGpuMesh;
 }
 

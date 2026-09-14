@@ -12,11 +12,11 @@ void drawHoverTooltip(
     bool hasHoverTile,
     int hoverX,
     int hoverZ,
-    BuildingType selectedBuildType,
+    StringHash selectedBuildType,
     bool demolishMode,
     entt::entity inspectedBuilding
 ) {
-    if (ImGui::GetIO().WantCaptureMouse || !hasHoverTile || demolishMode || selectedBuildType != BuildingType::None) {
+    if (ImGui::GetIO().WantCaptureMouse || !hasHoverTile || demolishMode || selectedBuildType != BuildingIds::None) {
         return;
     }
 
@@ -30,7 +30,7 @@ void drawHoverTooltip(
         ImGui::BeginTooltip();
         const auto& hb = world.registry().get<BuildingComponent>(hoveredId);
         const BuildingDef& hDef = getBuildingDef(hb.type);
-        ImGui::TextUnformatted(hDef.name.data());
+        ImGui::TextUnformatted(hDef.name.c_str());
         ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "Click to inspect");
         ImGui::EndTooltip();
     }

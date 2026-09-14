@@ -1,11 +1,16 @@
 #pragma once
 
+#include "engine/foundation/StringHash.hpp"
+
 #include <glm/vec2.hpp>
 #include <glm/vec3.hpp>
 #include <glm/vec4.hpp>
 
 #include <array>
 #include <cstdint>
+#include <filesystem>
+#include <optional>
+#include <string>
 #include <string_view>
 #include <vector>
 
@@ -31,20 +36,17 @@ enum class EraType : uint8_t {
 
 constexpr size_t kEraCount = static_cast<size_t>(EraType::Count);
 
-enum class BuildingType : uint8_t {
-    None = 0,
-    TownCenter,
-    Residence,
-    Lumberjack,
-    Fishery,
-    StoneQuarry,
-    WheatFarm,
-    Bakery,
-    Road,
-    Count
-};
-
-constexpr size_t kBuildingTypeCount = static_cast<size_t>(BuildingType::Count);
+namespace BuildingIds {
+    inline constexpr StringHash None = ""_sh;
+    inline constexpr StringHash TownCenter = "town_center"_sh;
+    inline constexpr StringHash Residence = "residence"_sh;
+    inline constexpr StringHash Lumberjack = "lumberjack"_sh;
+    inline constexpr StringHash Fishery = "fishery"_sh;
+    inline constexpr StringHash StoneQuarry = "stone_quarry"_sh;
+    inline constexpr StringHash WheatFarm = "wheat_farm"_sh;
+    inline constexpr StringHash Bakery = "bakery"_sh;
+    inline constexpr StringHash Road = "road"_sh;
+}
 
 enum class BuildingCategory : uint8_t {
     Anchor = 0,
@@ -106,8 +108,9 @@ struct ProductionRecipe {
 };
 
 struct BuildingDef {
-    BuildingType type = BuildingType::None;
-    std::string_view name = "None";
+    StringHash id = BuildingIds::None;
+    std::string stringId = "none";
+    std::string name = "None";
     BuildingCategory category = BuildingCategory::Infrastructure;
     EraType requiredEra = EraType::StoneAge;
     ResourceBundle cost{};
@@ -116,7 +119,8 @@ struct BuildingDef {
     float baseTaxIncomePerMinute = 0.0f;
     ProductionRecipe production{};
     glm::vec3 primaryColor{1.0f};
-    std::string_view description = "";
+    std::string description = "";
+    std::string mesh = "";
 };
 
 struct CarrierDef {
@@ -132,12 +136,12 @@ struct EvolutionRequirement {
 
 struct EraDefinition {
     EraType era = EraType::StoneAge;
-    std::string_view name = "Stone Age";
+    std::string name = "Stone Age";
     int requiredPopulation = 12;
     std::vector<EvolutionRequirement> evolutionRequirements;
     CarrierDef carrier;
     int carrierPoolSize = 2; // Number of couriers operating from Town Center
-    std::vector<BuildingType> unlockedBuildings;
+    std::vector<StringHash> unlockedBuildings;
 };
 
 std::string_view getResourceName(ResourceType type);
@@ -145,10 +149,18 @@ glm::vec3 getResourceColor(ResourceType type);
 std::string_view getEraName(EraType era);
 std::string_view getCategoryName(BuildingCategory category);
 
-const BuildingDef& getBuildingDef(BuildingType type);
-std::vector<BuildingType> getAvailableBuildingsForEra(EraType era);
+std::optional<ResourceType> parseResourceType(std::string_view str);
+std::optional<EraType> parseEraType(std::string_view str);
+std::optional<BuildingCategory> parseBuildingCategory(std::string_view str);
+
+const BuildingDef& getBuildingDef(StringHash id);
+std::vector<StringHash> getAvailableBuildingsForEra(EraType era);
+const std::vector<BuildingDef>& getAllBuildingDefs();
 
 const EraDefinition& getEraDefinition(EraType era);
 CarrierDef getCarrierDefForEra(EraType era);
+
+bool initEraData(const std::filesystem::path& dataDir = "");
+bool reloadEraData();
 
 } // namespace engine::era

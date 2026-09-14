@@ -12,7 +12,7 @@ TEST_CASE("CityCommands - PlaceBuildingCmd") {
     CitySystems::initCity(world);
 
     SUBCASE("Success - valid placement with sufficient resources") {
-        PlaceBuildingCmd cmd{10, 10, BuildingType::Residence};
+        PlaceBuildingCmd cmd{10, 10, BuildingIds::Residence};
         auto res = validate(world, cmd);
         CHECK(res.ok());
         CHECK(res.status == CmdStatus::Success);
@@ -25,17 +25,17 @@ TEST_CASE("CityCommands - PlaceBuildingCmd") {
     }
 
     SUBCASE("Failure - out of bounds position") {
-        PlaceBuildingCmd cmdLow{-1, 5, BuildingType::Residence};
+        PlaceBuildingCmd cmdLow{-1, 5, BuildingIds::Residence};
         CHECK_FALSE(validate(world, cmdLow).ok());
         CHECK(validate(world, cmdLow).status == CmdStatus::InvalidPosition);
 
-        PlaceBuildingCmd cmdHigh{32, 5, BuildingType::Residence};
+        PlaceBuildingCmd cmdHigh{32, 5, BuildingIds::Residence};
         CHECK_FALSE(validate(world, cmdHigh).ok());
         CHECK(validate(world, cmdHigh).status == CmdStatus::InvalidPosition);
     }
 
     SUBCASE("Failure - invalid building type") {
-        PlaceBuildingCmd cmd{5, 5, BuildingType::None};
+        PlaceBuildingCmd cmd{5, 5, BuildingIds::None};
         auto res = validate(world, cmd);
         CHECK_FALSE(res.ok());
         CHECK(res.status == CmdStatus::RequirementsNotMet);
@@ -43,7 +43,7 @@ TEST_CASE("CityCommands - PlaceBuildingCmd") {
 
     SUBCASE("Failure - era requirement not met") {
         // StoneQuarry requires BronzeAge, but initial city is StoneAge
-        PlaceBuildingCmd cmd{5, 5, BuildingType::StoneQuarry};
+        PlaceBuildingCmd cmd{5, 5, BuildingIds::StoneQuarry};
         auto res = validate(world, cmd);
         CHECK_FALSE(res.ok());
         CHECK(res.status == CmdStatus::RequirementsNotMet);
@@ -51,7 +51,7 @@ TEST_CASE("CityCommands - PlaceBuildingCmd") {
 
     SUBCASE("Failure - tile already occupied") {
         // TownCenter is pre-placed at (15, 15)
-        PlaceBuildingCmd cmd{15, 15, BuildingType::Residence};
+        PlaceBuildingCmd cmd{15, 15, BuildingIds::Residence};
         auto res = validate(world, cmd);
         CHECK_FALSE(res.ok());
         CHECK(res.status == CmdStatus::TileOccupied);
@@ -61,7 +61,7 @@ TEST_CASE("CityCommands - PlaceBuildingCmd") {
         auto& state = world.resource<CityState>();
         state.storage.amounts.fill(0.0f); // Empty all resources
 
-        PlaceBuildingCmd cmd{5, 5, BuildingType::Residence};
+        PlaceBuildingCmd cmd{5, 5, BuildingIds::Residence};
         auto res = validate(world, cmd);
         CHECK_FALSE(res.ok());
         CHECK(res.status == CmdStatus::CannotAfford);
@@ -73,7 +73,7 @@ TEST_CASE("CityCommands - DemolishBuildingCmd") {
     CitySystems::initCity(world);
 
     SUBCASE("Success - demolish existing non-hub building") {
-        PlaceBuildingCmd placeCmd{10, 10, BuildingType::Residence};
+        PlaceBuildingCmd placeCmd{10, 10, BuildingIds::Residence};
         apply(world, placeCmd);
 
         const auto& grid = world.resource<GridIndex>();
@@ -174,8 +174,8 @@ TEST_CASE("CityCommands - Queue and Dispatch Integration") {
     CHECK(world.commands().isRegistered<EvolveEraCmd>());
 
     // Enqueue 1 valid place, 1 invalid place, 1 invalid demolish
-    world.commandQueue().enqueue(PlaceBuildingCmd{12, 12, BuildingType::Residence});
-    world.commandQueue().enqueue(PlaceBuildingCmd{-1, 0, BuildingType::Residence});
+    world.commandQueue().enqueue(PlaceBuildingCmd{12, 12, BuildingIds::Residence});
+    world.commandQueue().enqueue(PlaceBuildingCmd{-1, 0, BuildingIds::Residence});
     world.commandQueue().enqueue(DemolishBuildingCmd{5, 5}); // empty
 
     CHECK(world.commandQueue().size() == 3);

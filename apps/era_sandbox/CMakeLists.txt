@@ -6,6 +6,7 @@ add_library(era_simulation STATIC
 
 target_link_libraries(era_simulation PUBLIC
     engine_world
+    engine_data
     glm::glm
     EnTT::EnTT
 )
@@ -30,6 +31,7 @@ add_executable(era_sandbox
 
 target_link_libraries(era_sandbox PRIVATE
     era_simulation
+    engine_data
     engine_core
     engine_assets
     engine_ecs
@@ -65,4 +67,7 @@ add_custom_command(TARGET era_sandbox POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory
         "${CMAKE_SOURCE_DIR}/assets/sounds"
         "$<TARGET_FILE_DIR:era_sandbox>/assets/sounds"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${CMAKE_SOURCE_DIR}/assets/data"
+        "$<TARGET_FILE_DIR:era_sandbox>/assets/data"
 )

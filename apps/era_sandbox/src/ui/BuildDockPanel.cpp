@@ -13,7 +13,7 @@ void drawBuildDock(
     engine::CommandQueue& /*commands*/,
     float screenWidth,
     float screenHeight,
-    BuildingType& selectedBuildType,
+    StringHash& selectedBuildType,
     bool& demolishMode,
     entt::entity& inspectedBuilding
 ) {
@@ -32,7 +32,7 @@ void drawBuildDock(
         const auto buildings = getAvailableBuildingsForEra(state.currentEra);
         
         for (size_t i = 0; i < buildings.size(); ++i) {
-            const BuildingType bType = buildings[i];
+            const StringHash bType = buildings[i];
             const BuildingDef& def = getBuildingDef(bType);
             const bool canAfford = CitySystems::canAfford(world, bType);
             
@@ -48,7 +48,7 @@ void drawBuildDock(
                 ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.3f, 0.3f, 0.35f, 1.0f));
             }
 
-            if (ImGui::Button(def.name.data(), ImVec2(100, 40))) {
+            if (ImGui::Button(def.name.c_str(), ImVec2(100, 40))) {
                 selectedBuildType = bType;
                 demolishMode = false;
                 inspectedBuilding = entt::null;
@@ -62,7 +62,7 @@ void drawBuildDock(
 
             if (ImGui::IsItemHovered()) {
                 ImGui::BeginTooltip();
-                ImGui::TextUnformatted(def.name.data());
+                ImGui::TextUnformatted(def.name.c_str());
                 ImGui::Separator();
                 ImGui::Text("Cost:");
                 for (size_t resIdx = 0; resIdx < kResourceCount; ++resIdx) {
@@ -72,7 +72,7 @@ void drawBuildDock(
                     }
                 }
                 ImGui::Spacing();
-                ImGui::Text("%s", def.description.data());
+                ImGui::Text("%s", def.description.c_str());
                 ImGui::EndTooltip();
             }
 
@@ -94,7 +94,7 @@ void drawBuildDock(
         if (ImGui::Button("Demolish", ImVec2(80, 40))) {
             demolishMode = !demolishMode;
             if (demolishMode) {
-                selectedBuildType = BuildingType::None;
+                selectedBuildType = BuildingIds::None;
                 inspectedBuilding = entt::null;
             }
         }

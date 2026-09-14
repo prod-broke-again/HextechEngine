@@ -26,6 +26,22 @@ public:
         return m_hash != other.m_hash;
     }
 
+    constexpr bool operator<(const StringHash& other) const {
+        return m_hash < other.m_hash;
+    }
+
+    constexpr bool operator<=(const StringHash& other) const {
+        return m_hash <= other.m_hash;
+    }
+
+    constexpr bool operator>(const StringHash& other) const {
+        return m_hash > other.m_hash;
+    }
+
+    constexpr bool operator>=(const StringHash& other) const {
+        return m_hash >= other.m_hash;
+    }
+
 private:
     constexpr static uint32_t hashStr(std::string_view str) {
         uint32_t hash = kOffsetBasis;
@@ -39,7 +55,12 @@ private:
     uint32_t m_hash;
 };
 
+constexpr inline StringHash operator""_sh(const char* str, size_t len) {
+    return StringHash(std::string_view(str, len));
+}
+
 } // namespace engine
+
 
 // std::hash specialization so we can use it in unordered_map if needed (though discouraged in simulation, OK in editor)
 namespace std {

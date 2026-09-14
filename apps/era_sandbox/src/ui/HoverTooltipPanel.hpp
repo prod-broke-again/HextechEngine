@@ -14,7 +14,7 @@ void drawHoverTooltip(
     bool hasHoverTile,
     int hoverX,
     int hoverZ,
-    BuildingType selectedBuildType,
+    StringHash selectedBuildType,
     bool demolishMode,
     entt::entity inspectedBuilding
 );

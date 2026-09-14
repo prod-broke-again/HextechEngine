@@ -70,7 +70,7 @@ private:
     int m_hoverZ = -1;
     glm::vec3 m_groundHitPos{0.0f};
 
-    BuildingType m_selectedBuildType = BuildingType::None;
+    StringHash m_selectedBuildType = BuildingIds::None;
     bool m_demolishMode = false;
     entt::entity m_inspectedBuildingId = entt::null; // using entity instead of uint32_t
 

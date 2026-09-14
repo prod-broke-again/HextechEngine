@@ -1,0 +1,157 @@
+[
+  {
+    "id": "town_center",
+    "name": "Town Center",
+    "category": "Anchor",
+    "requiredEra": "StoneAge",
+    "cost": {},
+    "footprint": [1, 1],
+    "maxInhabitants": 0,
+    "baseTaxIncomePerMinute": 0.0,
+    "primaryColor": [1.0, 0.45, 0.1],
+    "mesh": "town_center",
+    "description": "Heart of the settlement. Stores materials and anchors the era."
+  },
+  {
+    "id": "residence",
+    "name": "Settler House",
+    "category": "Housing",
+    "requiredEra": "StoneAge",
+    "cost": {
+      "Wood": 4.0
+    },
+    "footprint": [1, 1],
+    "maxInhabitants": 5,
+    "baseTaxIncomePerMinute": 1.0,
+    "primaryColor": [0.68, 0.48, 0.28],
+    "mesh": "residence",
+    "description": "Shelter for settlers. Consumes fish and firewood; pays taxes."
+  },
+  {
+    "id": "lumberjack",
+    "name": "Woodcutter",
+    "category": "Gathering",
+    "requiredEra": "StoneAge",
+    "cost": {
+      "Wood": 5.0
+    },
+    "footprint": [1, 1],
+    "maxInhabitants": 0,
+    "baseTaxIncomePerMinute": 0.0,
+    "production": {
+      "inputResource": "Wood",
+      "inputPerMinute": 0.0,
+      "outputResource": "Wood",
+      "outputPerMinute": 3.0,
+      "cycleSeconds": 5.0
+    },
+    "primaryColor": [0.35, 0.55, 0.22],
+    "mesh": "lumberjack",
+    "description": "Harvests timber from surrounding land. Produces +3.0 Wood/min."
+  },
+  {
+    "id": "fishery",
+    "name": "Fisherman's Hut",
+    "category": "Gathering",
+    "requiredEra": "StoneAge",
+    "cost": {
+      "Wood": 6.0
+    },
+    "footprint": [1, 1],
+    "maxInhabitants": 0,
+    "baseTaxIncomePerMinute": 0.0,
+    "production": {
+      "inputResource": "Fish",
+      "inputPerMinute": 0.0,
+      "outputResource": "Fish",
+      "outputPerMinute": 2.0,
+      "cycleSeconds": 6.0
+    },
+    "primaryColor": [0.20, 0.55, 0.75],
+    "mesh": "fishery",
+    "description": "Catches fish in coastal traps. Produces +2.0 Fish/min (feeds 10 huts)."
+  },
+  {
+    "id": "stone_quarry",
+    "name": "Stone Quarry",
+    "category": "Gathering",
+    "requiredEra": "BronzeAge",
+    "cost": {
+      "Wood": 12.0
+    },
+    "footprint": [1, 1],
+    "maxInhabitants": 0,
+    "baseTaxIncomePerMinute": 0.0,
+    "production": {
+      "inputResource": "Stone",
+      "inputPerMinute": 0.0,
+      "outputResource": "Stone",
+      "outputPerMinute": 2.0,
+      "cycleSeconds": 6.0
+    },
+    "primaryColor": [0.60, 0.60, 0.65],
+    "mesh": "stone_quarry",
+    "description": "Quarries raw stone blocks for construction. Produces +2.0 Stone/min."
+  },
+  {
+    "id": "wheat_farm",
+    "name": "Wheat Farm",
+    "category": "Gathering",
+    "requiredEra": "BronzeAge",
+    "cost": {
+      "Wood": 10.0,
+      "Stone": 4.0
+    },
+    "footprint": [1, 1],
+    "maxInhabitants": 0,
+    "baseTaxIncomePerMinute": 0.0,
+    "production": {
+      "inputResource": "Grain",
+      "inputPerMinute": 0.0,
+      "outputResource": "Grain",
+      "outputPerMinute": 3.0,
+      "cycleSeconds": 5.0
+    },
+    "primaryColor": [0.88, 0.78, 0.20],
+    "mesh": "wheat_farm",
+    "description": "Harvests wheat stalks. Produces +3.0 Grain/min."
+  },
+  {
+    "id": "bakery",
+    "name": "Bakery",
+    "category": "Refinement",
+    "requiredEra": "BronzeAge",
+    "cost": {
+      "Wood": 14.0,
+      "Stone": 8.0
+    },
+    "footprint": [1, 1],
+    "maxInhabitants": 0,
+    "baseTaxIncomePerMinute": 0.0,
+    "production": {
+      "inputResource": "Grain",
+      "inputPerMinute": 2.0,
+      "outputResource": "Bread",
+      "outputPerMinute": 2.0,
+      "cycleSeconds": 6.0
+    },
+    "primaryColor": [0.80, 0.45, 0.20],
+    "mesh": "bakery",
+    "description": "Mills grain and bakes bread. Produces +2.0 Bread/min from Grain."
+  },
+  {
+    "id": "road",
+    "name": "Trail / Road",
+    "category": "Infrastructure",
+    "requiredEra": "StoneAge",
+    "cost": {
+      "Wood": 1.0
+    },
+    "footprint": [1, 1],
+    "maxInhabitants": 0,
+    "baseTaxIncomePerMinute": 0.0,
+    "primaryColor": [0.48, 0.38, 0.24],
+    "mesh": "road",
+    "description": "Path connecting settlement buildings."
+  }
+]

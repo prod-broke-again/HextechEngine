@@ -15,7 +15,7 @@ void drawBuildDock(
     engine::CommandQueue& commands,
     float screenWidth,
     float screenHeight,
-    BuildingType& selectedBuildType,
+    StringHash& selectedBuildType,
     bool& demolishMode,
     entt::entity& inspectedBuilding
 );
