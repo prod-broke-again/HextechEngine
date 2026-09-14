@@ -3,7 +3,7 @@ add_executable(era_sandbox
     src/EraSandboxModule.cpp
     src/Camera/RtsCamera.cpp
     src/Simulation/EraData.cpp
-    src/Simulation/CitySimulation.cpp
+    src/Simulation/CitySystems.cpp
     src/Graphics/ProceduralCityMeshes.cpp
 )
 

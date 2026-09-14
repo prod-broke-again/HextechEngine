@@ -3,6 +3,10 @@
 
 int main(int argc, char** argv) {
     engine::Engine engine;
-    engine.modules().registerModule<engine::era::EraSandboxModule>();
-    return engine.run();
+    engine.use<engine::era::EraSandboxModule>();
+    if (engine.init()) {
+        engine.run();
+    }
+    engine.shutdown();
+    return 0;
 }

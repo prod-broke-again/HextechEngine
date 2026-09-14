@@ -58,6 +58,10 @@ public:
 
     TypeRegistry& types() { return m_types; }
 
+    template<class T> bool hasResource() const {
+        return m_registry.ctx().contains<T>();
+    }
+
     template<class T> T& resource() {
         return m_registry.ctx().get<T>();
     }

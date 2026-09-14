@@ -4,8 +4,9 @@
 #include "engine/world/World.hpp"
 #include "Camera/RtsCamera.hpp"
 #include "Graphics/ProceduralCityMeshes.hpp"
-#include "Simulation/CitySimulation.hpp"
-#include "Simulation/EraData.hpp"
+#include "Simulation/CitySystems.hpp"
+#include "Simulation/CityEvents.hpp"
+#include "Simulation/Components.hpp"
 #include "engine/core/Input.hpp"
 #include "engine/integration/PlatformGLFW.hpp"
 #include "engine/renderer/vulkan/VulkanContext.hpp"
@@ -41,13 +42,12 @@ private:
     void handleResize(const engine::WindowResizeEvent& ev);
     void renderUi(World& world);
 
-    void spawnVisualBuilding(const BuildingInstance& b, World& world);
-    void removeVisualBuilding(uint32_t buildingId, World& world);
-    void spawnVisualCarrier(const CarrierAgent& agent, World& world);
-    void removeVisualCarrier(uint32_t carrierId, World& world);
-    void spawnAlertIndicator(const BuildingStatusEvent& ev, World& world);
-    void removeAlertIndicator(uint32_t buildingId, World& world);
-    void onEraEvolved(EraType newEra, World& world);
+    void spawnVisualBuilding(const BuildingPlacedEvent& ev);
+    void removeVisualBuilding(const BuildingRemovedEvent& ev);
+    void spawnVisualCarrier(const CarrierSpawnedEvent& ev);
+    void spawnAlertIndicator(const BuildingStatusEvent& ev);
+    void removeAlertIndicator(entt::entity buildingId);
+    void onEraEvolved(const EraEvolvedEvent& ev);
 
     RtsCamera m_camera;
     entt::entity m_cameraEntity = entt::null;
@@ -55,10 +55,9 @@ private:
     entt::entity m_ghostEntity = entt::null;
 
     ProceduralCityMeshes m_cityMeshes;
-    CitySimulation m_simulation;
-    std::unordered_map<uint32_t, entt::entity> m_buildingEntities;
-    std::unordered_map<uint32_t, entt::entity> m_carrierEntities;
-    std::unordered_map<uint32_t, entt::entity> m_alertEntities;
+
+    // Notice: NO m_simulation, NO parallel maps!
+    std::unordered_map<entt::entity, entt::entity> m_alertEntities; // map building entity -> alert indicator entity
 
     static constexpr int kGridSize = 32;
     static constexpr float kTileSize = 1.0f;
@@ -70,7 +69,7 @@ private:
 
     BuildingType m_selectedBuildType = BuildingType::None;
     bool m_demolishMode = false;
-    uint32_t m_inspectedBuildingId = 0;
+    entt::entity m_inspectedBuildingId = entt::null; // using entity instead of uint32_t
 
     glm::vec3 m_sunDirection{-0.4f, -1.0f, -0.3f};
     bool m_enableShadows = true;
@@ -80,4 +79,3 @@ private:
 };
 
 } // namespace engine::era
-

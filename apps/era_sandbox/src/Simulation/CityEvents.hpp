@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Simulation/EraData.hpp"
+#include <entt/entt.hpp>
 #include <cstdint>
 
 namespace engine::era {
@@ -12,8 +13,33 @@ enum class BuildingAlertKind : uint8_t {
     NoWorker       // Reserved for future workforce/labor mechanic
 };
 
+struct BuildingPlacedEvent {
+    entt::entity entity = entt::null;
+    int gridX = 0;
+    int gridZ = 0;
+    BuildingType type = BuildingType::None;
+};
+
+struct BuildingRemovedEvent {
+    entt::entity entity = entt::null;
+    int gridX = 0;
+    int gridZ = 0;
+};
+
+struct CarrierSpawnedEvent {
+    entt::entity entity = entt::null;
+};
+
+struct CarrierRemovedEvent {
+    entt::entity entity = entt::null;
+};
+
+struct EraEvolvedEvent {
+    EraType newEra = EraType::StoneAge;
+};
+
 struct BuildingStatusEvent {
-    uint32_t buildingId = 0;
+    entt::entity entity = entt::null;
     BuildingType buildingType = BuildingType::None;
     BuildingAlertKind alert = BuildingAlertKind::None;
     bool active = false; // true = alert raised, false = alert resolved/cleared
