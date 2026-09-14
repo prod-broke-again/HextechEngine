@@ -38,6 +38,11 @@ void Input::setMousePosition(float x, float y) {
 
 void Input::addScroll(float delta) { m_current.scrollDelta += delta; }
 
+void Input::resetMouseDelta() {
+    m_current.mouseDelta = glm::vec2(0.f);
+    m_firstMouseMove = true;
+}
+
 bool Input::keyDown(int key) const {
     if (key < 0 || key >= 512) {
         return false;

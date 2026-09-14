@@ -32,6 +32,10 @@ public:
     [[nodiscard]] uint32_t graphicsFamily() const { return m_graphicsFamily; }
     [[nodiscard]] uint32_t presentFamily() const { return m_presentFamily; }
     [[nodiscard]] VkRenderPass renderPass() const { return m_renderPass; }
+    [[nodiscard]] VkRenderPass hdrRenderPass() const { return m_hdrRenderPass; }
+    [[nodiscard]] VkFramebuffer hdrFramebuffer() const { return m_hdrFramebuffer; }
+    [[nodiscard]] VkImageView hdrImageView() const { return m_hdrImageView; }
+    [[nodiscard]] VkFormat hdrFormat() const { return m_hdrFormat; }
     [[nodiscard]] VkSwapchainKHR swapchain() const { return m_swapchain; }
     [[nodiscard]] VkFormat swapchainFormat() const { return m_swapchainFormat; }
     [[nodiscard]] VkExtent2D swapchainExtent() const { return m_swapchainExtent; }
@@ -64,6 +68,10 @@ private:
     bool createRenderPass();
     bool createDepthResources();
     bool createFramebuffers();
+    bool createHdrResources();
+    bool createHdrRenderPass();
+    bool createHdrFramebuffer();
+    void cleanupHdrResources();
     bool createCommandPool();
     bool createCommandBuffers();
     bool createSyncObjects();
@@ -92,6 +100,13 @@ private:
     VkImageView m_depthImageView = VK_NULL_HANDLE;
     VkFormat m_depthFormat{};
     std::vector<VkFramebuffer> m_swapchainFramebuffers;
+
+    VkImage m_hdrImage = VK_NULL_HANDLE;
+    void* m_hdrAllocation = nullptr;
+    VkImageView m_hdrImageView = VK_NULL_HANDLE;
+    VkFormat m_hdrFormat = VK_FORMAT_R16G16B16A16_SFLOAT;
+    VkRenderPass m_hdrRenderPass = VK_NULL_HANDLE;
+    VkFramebuffer m_hdrFramebuffer = VK_NULL_HANDLE;
 
     VkCommandPool m_commandPool = VK_NULL_HANDLE;
     std::vector<VkCommandBuffer> m_commandBuffers;

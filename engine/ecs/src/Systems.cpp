@@ -19,7 +19,7 @@ void updateTransforms(entt::registry& registry) {
 }
 
 void updateFreeFlyCamera(entt::registry& registry, const Input& input, const InputMap& inputMap,
-                         float deltaTime) {
+                         float deltaTime, bool allowLook) {
     auto view = registry.view<TransformLocal, FreeFlyController, CameraComponent>();
     for (const auto entity : view) {
         auto& transform = view.get<TransformLocal>(entity);
@@ -29,11 +29,13 @@ void updateFreeFlyCamera(entt::registry& registry, const Input& input, const Inp
             continue;
         }
 
-        if (inputMap.actionDown(input, Action::Look)) {
+        if (allowLook || inputMap.actionDown(input, Action::Look)) {
             const glm::vec2 delta = inputMap.lookDelta();
-            controller.yaw += delta.x * controller.lookSensitivity;
-            controller.pitch -= delta.y * controller.lookSensitivity;
-            controller.pitch = std::clamp(controller.pitch, -1.4f, 1.4f);
+            if (delta.x != 0.f || delta.y != 0.f) {
+                controller.yaw += delta.x * controller.lookSensitivity;
+                controller.pitch -= delta.y * controller.lookSensitivity;
+                controller.pitch = std::clamp(controller.pitch, -1.52f, 1.52f);
+            }
         }
 
         const glm::vec3 forward{std::cos(controller.yaw) * std::cos(controller.pitch),

@@ -21,6 +21,7 @@ public:
     void setMouseButton(int button, bool pressed);
     void setMousePosition(float x, float y);
     void addScroll(float delta);
+    void resetMouseDelta();
 
     [[nodiscard]] const InputSnapshot& snapshot() const { return m_current; }
     [[nodiscard]] bool keyDown(int key) const;

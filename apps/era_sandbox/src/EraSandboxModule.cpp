@@ -1,0 +1,981 @@
+#include "EraSandboxModule.hpp"
+
+#include "engine/assets/MeshBuilder.hpp"
+#include "engine/core/Log.hpp"
+#include "engine/core/Path.hpp"
+#include "engine/ecs/Systems.hpp"
+
+#include <GLFW/glfw3.h>
+#include <glm/gtc/matrix_transform.hpp>
+#include <imgui.h>
+#include <imgui_impl_vulkan.h>
+
+#include <algorithm>
+#include <array>
+#include <chrono>
+#include <filesystem>
+#include <thread>
+#include <vector>
+
+namespace engine::era {
+
+namespace {
+
+MeshCpuData createGridMesh(int gridSize, float tileSize) {
+    MeshCpuData mesh;
+    mesh.vertices.reserve(gridSize * gridSize * 4 + 16);
+    mesh.indices.reserve(gridSize * gridSize * 6 + 24);
+
+    const glm::vec3 normal{0.0f, 1.0f, 0.0f};
+
+    // 1. Playable 32x32 checkered terrain tiles
+    for (int z = 0; z < gridSize; ++z) {
+        for (int x = 0; x < gridSize; ++x) {
+            const float x0 = static_cast<float>(x) * tileSize;
+            const float z0 = static_cast<float>(z) * tileSize;
+            const float x1 = x0 + tileSize;
+            const float z1 = z0 + tileSize;
+
+            const bool isEven = ((x + z) % 2 == 0);
+            const glm::vec3 tileColor = isEven ? glm::vec3(0.28f, 0.46f, 0.22f)
+                                               : glm::vec3(0.24f, 0.40f, 0.19f);
+
+            const uint32_t base = static_cast<uint32_t>(mesh.vertices.size());
+            mesh.vertices.push_back({glm::vec3(x0, 0.0f, z0), normal, glm::vec2(0.f, 0.f), tileColor});
+            mesh.vertices.push_back({glm::vec3(x1, 0.0f, z0), normal, glm::vec2(1.f, 0.f), tileColor});
+            mesh.vertices.push_back({glm::vec3(x1, 0.0f, z1), normal, glm::vec2(1.f, 1.f), tileColor});
+            mesh.vertices.push_back({glm::vec3(x0, 0.0f, z1), normal, glm::vec2(0.f, 1.f), tileColor});
+
+            mesh.indices.push_back(base);
+            mesh.indices.push_back(base + 2);
+            mesh.indices.push_back(base + 1);
+            mesh.indices.push_back(base);
+            mesh.indices.push_back(base + 3);
+            mesh.indices.push_back(base + 2);
+        }
+    }
+
+    // 2. Surrounding skirt / forest border (gives a nice island/tabletop boundary)
+    const float borderMin = -12.0f;
+    const float borderMax = static_cast<float>(gridSize) * tileSize + 12.0f;
+    const float ySkirt = -0.04f;
+    const glm::vec3 skirtColor{0.14f, 0.24f, 0.12f};
+
+    auto addQuad = [&](float x0, float z0, float x1, float z1) {
+        const uint32_t b = static_cast<uint32_t>(mesh.vertices.size());
+        mesh.vertices.push_back({glm::vec3(x0, ySkirt, z0), normal, glm::vec2(0.f, 0.f), skirtColor});
+        mesh.vertices.push_back({glm::vec3(x1, ySkirt, z0), normal, glm::vec2(1.f, 0.f), skirtColor});
+        mesh.vertices.push_back({glm::vec3(x1, ySkirt, z1), normal, glm::vec2(1.f, 1.f), skirtColor});
+        mesh.vertices.push_back({glm::vec3(x0, ySkirt, z1), normal, glm::vec2(0.f, 1.f), skirtColor});
+
+        mesh.indices.push_back(b);
+        mesh.indices.push_back(b + 2);
+        mesh.indices.push_back(b + 1);
+        mesh.indices.push_back(b);
+        mesh.indices.push_back(b + 3);
+        mesh.indices.push_back(b + 2);
+    };
+
+    const float gMax = static_cast<float>(gridSize) * tileSize;
+    addQuad(borderMin, borderMin, borderMax, 0.0f);     // North skirt
+    addQuad(borderMin, gMax, borderMax, borderMax);     // South skirt
+    addQuad(borderMin, 0.0f, 0.0f, gMax);               // West skirt
+    addQuad(gMax, 0.0f, borderMax, gMax);               // East skirt
+
+    return mesh;
+}
+
+MeshCpuData createHoverQuadMesh() {
+    MeshCpuData mesh;
+    const float h = 0.47f; // slightly smaller than 0.5 to show tile boundaries
+    const glm::vec3 normal{0.0f, 1.0f, 0.0f};
+    const glm::vec3 color{0.2f, 1.0f, 0.85f};
+
+    mesh.vertices = {
+        {glm::vec3(-h, 0.0f, -h), normal, glm::vec2(0.f, 0.f), color},
+        {glm::vec3(h,  0.0f, -h), normal, glm::vec2(1.f, 0.f), color},
+        {glm::vec3(h,  0.0f,  h), normal, glm::vec2(1.f, 1.f), color},
+        {glm::vec3(-h, 0.0f,  h), normal, glm::vec2(0.f, 1.f), color},
+    };
+    mesh.indices = {0, 2, 1, 0, 3, 2};
+    return mesh;
+}
+
+} // namespace
+
+void EraSandboxModule::onAttach(World& world) {
+    m_world = &world;
+    m_world->resource<PlatformGLFW>().setCursorCaptured(false);
+    
+    // Bind simulation callbacks to ECS
+    m_simulation.setOnBuildingPlaced([this](const BuildingInstance& b) {
+        spawnVisualBuilding(b, *m_world);
+    });
+    m_simulation.setOnBuildingRemoved([this](uint32_t buildingId, int /*x*/, int /*z*/) {
+        removeVisualBuilding(buildingId, *m_world);
+    });
+    m_simulation.setOnCarrierSpawned([this](const CarrierAgent& agent) {
+        spawnVisualCarrier(agent, *m_world);
+    });
+    m_simulation.setOnCarrierRemoved([this](uint32_t carrierId) {
+        removeVisualCarrier(carrierId, *m_world);
+    });
+    m_simulation.setOnEvolved([this](EraType newEra) {
+        onEraEvolved(newEra, *m_world);
+    });
+    m_simulation.setOnBuildingStatusChanged([this](const BuildingStatusEvent& ev) {
+        if (ev.active) {
+            spawnAlertIndicator(ev, *m_world);
+        } else {
+            removeAlertIndicator(ev.buildingId, *m_world);
+        }
+    });
+
+    setupScene(world);
+}
+
+void EraSandboxModule::onDetach(World& world) {
+    m_alertEntities.clear();
+    m_carrierEntities.clear();
+    m_buildingEntities.clear();
+    if (m_world) {
+        vkDeviceWaitIdle(m_world->resource<VulkanContext>().device());
+    }
+    m_world = nullptr;
+}
+
+void EraSandboxModule::tick(World& world) {
+    updateFrame(world, 1.0f / 30.0f);
+}
+
+void EraSandboxModule::render(World& world, float alpha) {
+    if (world.resource<PlatformGLFW>().shouldClose()) return;
+    renderFrame(world);
+}
+void EraSandboxModule::spawnVisualBuilding(const BuildingInstance& b, World& world) {
+    const uint32_t meshId = m_cityMeshes.getBuildingMesh(b.type, m_simulation.getCurrentEra());
+    if (meshId == kInvalidGpuMesh) {
+        return;
+    }
+
+    const glm::vec3 worldPos{
+        static_cast<float>(b.gridX) * kTileSize + 0.5f * kTileSize,
+        0.0f,
+        static_cast<float>(b.gridZ) * kTileSize + 0.5f * kTileSize
+    };
+
+    const entt::entity ent = m_world->registry().create();
+    const BuildingDef& def = getBuildingDef(b.type);
+
+    m_world->registry().emplace<TagComponent>(ent, TagComponent{std::string(def.name)});
+    m_world->registry().emplace<TransformLocal>(ent, TransformLocal{worldPos, glm::quat{1.f, 0.f, 0.f, 0.f}, glm::vec3(1.0f)});
+    m_world->registry().emplace<TransformWorld>(ent);
+
+    MeshComponent mc{};
+    mc.mesh = meshId;
+    mc.tint = glm::vec3(1.0f); // Procedural meshes have rich baked vertex colors
+    mc.roughness = 0.6f;
+    mc.metallic = 0.0f;
+    if (b.type == BuildingType::TownCenter && m_simulation.getCurrentEra() == EraType::StoneAge) {
+        mc.emissiveIntensity = 1.8f; // Glowing campfire in Stone Age
+    }
+    m_world->registry().emplace<MeshComponent>(ent, mc);
+    m_world->registry().emplace<RenderableTag>(ent);
+
+    m_buildingEntities[b.id] = ent;
+}
+
+void EraSandboxModule::removeVisualBuilding(uint32_t buildingId, World& world) {
+    removeAlertIndicator(buildingId, world);
+    auto it = m_buildingEntities.find(buildingId);
+    if (it != m_buildingEntities.end()) {
+        if (m_world->registry().valid(it->second)) {
+            m_world->registry().destroy(it->second);
+        }
+        m_buildingEntities.erase(it);
+    }
+}
+
+void EraSandboxModule::spawnVisualCarrier(const CarrierAgent& agent, World& world) {
+    const uint32_t meshId = m_cityMeshes.getCarrierMesh(m_simulation.getCurrentEra());
+    if (meshId == kInvalidGpuMesh) {
+        return;
+    }
+
+    const entt::entity ent = m_world->registry().create();
+    m_world->registry().emplace<TagComponent>(ent, TagComponent{"Courier"});
+    m_world->registry().emplace<TransformLocal>(ent, TransformLocal{agent.currentPos, glm::quat{1.f, 0.f, 0.f, 0.f}, glm::vec3(1.0f)});
+    m_world->registry().emplace<TransformWorld>(ent);
+
+    MeshComponent mc{};
+    mc.mesh = meshId;
+    mc.tint = glm::vec3(1.0f);
+    mc.roughness = 0.5f;
+    mc.metallic = 0.0f;
+    m_world->registry().emplace<MeshComponent>(ent, mc);
+    m_world->registry().emplace<RenderableTag>(ent);
+
+    m_carrierEntities[agent.id] = ent;
+}
+
+void EraSandboxModule::removeVisualCarrier(uint32_t carrierId, World& world) {
+    auto it = m_carrierEntities.find(carrierId);
+    if (it != m_carrierEntities.end()) {
+        if (m_world->registry().valid(it->second)) {
+            m_world->registry().destroy(it->second);
+        }
+        m_carrierEntities.erase(it);
+    }
+}
+
+void EraSandboxModule::spawnAlertIndicator(const BuildingStatusEvent& ev, World& world) {
+    removeAlertIndicator(ev.buildingId, *m_world);
+
+    const uint32_t meshId = m_cityMeshes.getAlertIconMesh();
+    if (meshId == kInvalidGpuMesh) {
+        return;
+    }
+
+    const glm::vec3 worldPos{
+        static_cast<float>(ev.gridX) * kTileSize + 0.5f * kTileSize,
+        1.25f,
+        static_cast<float>(ev.gridZ) * kTileSize + 0.5f * kTileSize
+    };
+
+    const entt::entity ent = m_world->registry().create();
+    m_world->registry().emplace<TagComponent>(ent, TagComponent{"BuildingAlert"});
+    m_world->registry().emplace<TransformLocal>(ent, TransformLocal{worldPos, glm::quat{1.f, 0.f, 0.f, 0.f}, glm::vec3(1.2f)});
+    m_world->registry().emplace<TransformWorld>(ent);
+
+    MeshComponent mc{};
+    mc.mesh = meshId;
+    mc.tint = glm::vec3(1.0f, 0.85f, 0.1f);
+    mc.roughness = 0.3f;
+    mc.metallic = 0.0f;
+    mc.emissiveIntensity = 2.5f; // Eye-catching luminous amber glow
+    m_world->registry().emplace<MeshComponent>(ent, mc);
+    m_world->registry().emplace<RenderableTag>(ent);
+
+    m_alertEntities[ev.buildingId] = ent;
+}
+
+void EraSandboxModule::removeAlertIndicator(uint32_t buildingId, World& world) {
+    auto it = m_alertEntities.find(buildingId);
+    if (it != m_alertEntities.end()) {
+        if (m_world->registry().valid(it->second)) {
+            m_world->registry().destroy(it->second);
+        }
+        m_alertEntities.erase(it);
+    }
+}
+
+void EraSandboxModule::onEraEvolved(EraType newEra, World& world) {
+    const glm::vec3 tcPos = m_simulation.getTownCenterPosition();
+
+    // 1. Fireworks / Celebration Particle Bursts over Town Center
+    m_world->resource<ParticleSystem>().spawnBurst(tcPos + glm::vec3(0.0f, 2.5f, 0.0f), 80, glm::vec4(1.0f, 0.85f, 0.2f, 1.0f), 8.0f);
+    m_world->resource<ParticleSystem>().spawnBurst(tcPos + glm::vec3(0.0f, 4.0f, 0.0f), 80, glm::vec4(0.2f, 0.95f, 1.0f, 1.0f), 10.0f);
+    m_world->resource<ParticleSystem>().spawnBurst(tcPos + glm::vec3(0.0f, 3.2f, 0.0f), 70, glm::vec4(1.0f, 0.35f, 0.15f, 1.0f), 9.0f);
+
+    // 2. Audio Chime / Fanfare
+    AudioEngine::instance().play2D("assets/sounds/test.wav", 1.0f);
+
+    // 3. Upgrade Building Visuals (Campfire -> Chieftain Hall, Shacks -> Clay Cottages)
+    for (const auto& [bId, ent] : m_buildingEntities) {
+        if (const auto* b = m_simulation.getBuildingById(bId)) {
+            if (m_world->registry().valid(ent)) {
+                auto& mc = m_world->registry().get<MeshComponent>(ent);
+                mc.mesh = m_cityMeshes.getBuildingMesh(b->type, newEra);
+                if (b->type == BuildingType::TownCenter) {
+                    mc.emissiveIntensity = 0.5f;
+                }
+            }
+        }
+    }
+
+    // 4. Upgrade Courier Visuals (Walking gatherer -> Wheelbarrow cart)
+    for (const auto& [cId, ent] : m_carrierEntities) {
+        if (m_world->registry().valid(ent)) {
+            auto& mc = m_world->registry().get<MeshComponent>(ent);
+            mc.mesh = m_cityMeshes.getCarrierMesh(newEra);
+        }
+    }
+}
+
+void EraSandboxModule::setupScene(World& world) {
+    // 1. Terrain Grid (32x32 tiles + outer border)
+    const MeshCpuData gridMesh = createGridMesh(kGridSize, kTileSize);
+    const uint32_t gridMeshId = m_world->resource<GpuMeshCache>().upload(gridMesh);
+
+    const entt::entity gridEnt = m_world->registry().create();
+    m_world->registry().emplace<TagComponent>(gridEnt, TagComponent{"TerrainGrid"});
+    m_world->registry().emplace<TransformLocal>(gridEnt, TransformLocal{glm::vec3(0.0f)});
+    m_world->registry().emplace<TransformWorld>(gridEnt);
+
+    MeshComponent gridComp{};
+    gridComp.mesh = gridMeshId;
+    gridComp.roughness = 0.9f;
+    gridComp.metallic = 0.0f;
+    m_world->registry().emplace<MeshComponent>(gridEnt, gridComp);
+    m_world->registry().emplace<RenderableTag>(gridEnt);
+
+    // 2. Cursor Hover Tile Quad
+    const MeshCpuData hoverMesh = createHoverQuadMesh();
+    const uint32_t hoverMeshId = m_world->resource<GpuMeshCache>().upload(hoverMesh);
+
+    m_hoverTileEntity = m_world->registry().create();
+    m_world->registry().emplace<TagComponent>(m_hoverTileEntity, TagComponent{"HoverTile"});
+    m_world->registry().emplace<TransformLocal>(m_hoverTileEntity,
+                                      TransformLocal{glm::vec3(0.0f), glm::quat{1.f, 0.f, 0.f, 0.f}, glm::vec3(0.0f)});
+    m_world->registry().emplace<TransformWorld>(m_hoverTileEntity);
+
+    MeshComponent hoverComp{};
+    hoverComp.mesh = hoverMeshId;
+    hoverComp.tint = glm::vec3(0.2f, 1.0f, 0.85f);
+    hoverComp.emissiveIntensity = 2.5f;
+    hoverComp.roughness = 0.2f;
+    m_world->registry().emplace<MeshComponent>(m_hoverTileEntity, hoverComp);
+    m_world->registry().emplace<RenderableTag>(m_hoverTileEntity);
+
+    // 3. Ghost Preview Entity
+    m_ghostEntity = m_world->registry().create();
+    m_world->registry().emplace<TagComponent>(m_ghostEntity, TagComponent{"GhostPreview"});
+    m_world->registry().emplace<TransformLocal>(m_ghostEntity,
+                                      TransformLocal{glm::vec3(0.0f), glm::quat{1.f, 0.f, 0.f, 0.f}, glm::vec3(0.0f)});
+    m_world->registry().emplace<TransformWorld>(m_ghostEntity);
+
+    MeshComponent ghostComp{};
+    ghostComp.mesh = m_cityMeshes.getBuildingMesh(BuildingType::Residence, m_simulation.getCurrentEra());
+    ghostComp.tint = glm::vec3(0.3f, 1.0f, 0.3f);
+    ghostComp.emissiveIntensity = 0.8f;
+    ghostComp.roughness = 0.4f;
+    m_world->registry().emplace<MeshComponent>(m_ghostEntity, ghostComp);
+    m_world->registry().emplace<RenderableTag>(m_ghostEntity);
+
+    // 4. Camera Entity
+    m_cameraEntity = m_world->registry().create();
+    m_world->registry().emplace<TagComponent>(m_cameraEntity, TagComponent{"RtsCamera"});
+    m_world->registry().emplace<TransformLocal>(m_cameraEntity, TransformLocal{m_camera.eyePosition()});
+    m_world->registry().emplace<TransformWorld>(m_cameraEntity);
+
+    CameraComponent camComp{};
+    camComp.fovDegrees = 50.0f;
+    camComp.nearPlane = 0.1f;
+    camComp.farPlane = 300.0f;
+    m_world->registry().emplace<CameraComponent>(m_cameraEntity, camComp);
+
+    FreeFlyController ctrl{};
+    ctrl.yaw = m_camera.yaw();
+    ctrl.pitch = m_camera.pitch();
+    m_world->registry().emplace<FreeFlyController>(m_cameraEntity, ctrl);
+
+    // Spawn visuals for any pre-placed simulation buildings (Campfire town center)
+    for (const auto& b : m_simulation.getBuildings()) {
+        spawnVisualBuilding(b, *m_world);
+    }
+
+    // Initialize Town Center courier pool
+    m_simulation.initCarrierPool();
+    for (const auto& c : m_simulation.getCarriers()) {
+        spawnVisualCarrier(c, world);
+    }
+
+    updateTransforms(m_world->registry());
+}
+
+void EraSandboxModule::updateFrame(World& world, float deltaTime) {
+    m_time += deltaTime;
+    const bool mouseCaptured = ImGui::GetIO().WantCaptureMouse;
+    const bool keyboardCaptured = ImGui::GetIO().WantCaptureKeyboard;
+
+    // 1. Update RTS Camera controls
+    m_camera.update(m_world->resource<Input>(), deltaTime, !keyboardCaptured);
+
+    // 2. Get screen size & compute camera state
+    const auto fbSize = m_world->resource<PlatformGLFW>().framebufferSize();
+    const glm::vec2 screenSize{
+        static_cast<float>(std::max(1, fbSize.x)),
+        static_cast<float>(std::max(1, fbSize.y))
+    };
+    const float aspect = screenSize.x / screenSize.y;
+    const CameraState camState = m_camera.getCameraState(aspect);
+
+    // 3. Synchronize camera entity for any subsystems
+    if (m_world->registry().valid(m_cameraEntity)) {
+        auto& t = m_world->registry().get<TransformLocal>(m_cameraEntity);
+        t.translation = camState.position;
+        if (auto* ctrl = m_world->registry().try_get<FreeFlyController>(m_cameraEntity)) {
+            ctrl->yaw = m_camera.yaw();
+            ctrl->pitch = m_camera.pitch();
+        }
+    }
+
+    // 4. Mouse Raycast onto ground plane Y = 0.0f
+    const glm::vec2 mousePos = m_world->resource<Input>().snapshot().mousePosition;
+    if (!mouseCaptured && m_camera.unprojectCursorToPlane(mousePos, screenSize, 0.0f, m_groundHitPos, camState)) {
+        int gx = 0, gz = 0;
+        if (m_camera.getGridCoords(m_groundHitPos, kTileSize, kGridSize, gx, gz)) {
+            m_hasHoverTile = true;
+            m_hoverX = gx;
+            m_hoverZ = gz;
+        } else {
+            m_hasHoverTile = false;
+            m_hoverX = -1;
+            m_hoverZ = -1;
+        }
+    } else {
+        m_hasHoverTile = false;
+        m_hoverX = -1;
+        m_hoverZ = -1;
+    }
+
+    // 5. Handle Building Placement & Demolish Clicks
+    if (!mouseCaptured && m_hasHoverTile) {
+        if (m_world->resource<Input>().mouseButtonPressed(GLFW_MOUSE_BUTTON_LEFT)) {
+            if (m_demolishMode) {
+                uint32_t removedId = 0;
+                if (m_simulation.demolishBuilding(m_hoverX, m_hoverZ, removedId)) {
+                    if (m_inspectedBuildingId == removedId) {
+                        m_inspectedBuildingId = 0;
+                    }
+                }
+            } else if (m_selectedBuildType != BuildingType::None) {
+                uint32_t placedId = 0;
+                if (m_simulation.placeBuilding(m_hoverX, m_hoverZ, m_selectedBuildType, placedId)) {
+                    m_inspectedBuildingId = placedId;
+                    if (!m_world->resource<Input>().keyDown(GLFW_KEY_LEFT_SHIFT)) {
+                        m_selectedBuildType = BuildingType::None;
+                    }
+                }
+            } else {
+                const auto* b = m_simulation.getBuildingAt(m_hoverX, m_hoverZ);
+                m_inspectedBuildingId = b ? b->id : 0;
+            }
+        }
+    }
+
+    // Right Click or ESC cancels placement / demolish mode
+    if (m_world->resource<Input>().mouseButtonPressed(GLFW_MOUSE_BUTTON_RIGHT) || m_world->resource<Input>().keyPressed(GLFW_KEY_ESCAPE)) {
+        if (m_selectedBuildType != BuildingType::None || m_demolishMode) {
+            m_selectedBuildType = BuildingType::None;
+            m_demolishMode = false;
+        }
+    }
+
+    // 6. Update Simulation Economy, Production, Needs & Couriers
+    m_simulation.update(deltaTime);
+    m_world->resource<ParticleSystem>().update(deltaTime);
+
+    // 7. Synchronize Courier ECS Visuals
+    for (const auto& agent : m_simulation.getCarriers()) {
+        auto it = m_carrierEntities.find(agent.id);
+        if (it != m_carrierEntities.end() && m_world->registry().valid(it->second)) {
+            auto& t = m_world->registry().get<TransformLocal>(it->second);
+            if (agent.state == CarrierState::IdleAtWarehouse) {
+                t.translation = agent.currentPos;
+                const glm::vec3 lookAway = agent.currentPos - m_simulation.getTownCenterPosition();
+                if (glm::length(glm::vec2(lookAway.x, lookAway.z)) > 0.001f) {
+                    const float yaw = std::atan2(lookAway.x, lookAway.z);
+                    t.rotation = glm::angleAxis(yaw, glm::vec3(0.0f, 1.0f, 0.0f));
+                }
+            } else {
+                const float bobY = std::abs(std::sin(agent.bobbingTimer)) * 0.04f;
+                t.translation = glm::vec3(agent.currentPos.x, bobY, agent.currentPos.z);
+
+                const glm::vec3 moveDir = agent.targetPos - agent.startPos;
+                if (glm::length(glm::vec2(moveDir.x, moveDir.z)) > 0.001f) {
+                    const float yaw = std::atan2(moveDir.x, moveDir.z);
+                    t.rotation = glm::angleAxis(yaw, glm::vec3(0.0f, 1.0f, 0.0f));
+                }
+            }
+        }
+    }
+
+    // 7.5 Synchronize Building Alert Indicators (bobbing & spinning animation)
+    const float alertTime = static_cast<float>(m_time);
+    for (auto& [bId, ent] : m_alertEntities) {
+        if (m_world->registry().valid(ent)) {
+            if (const auto* b = m_simulation.getBuildingById(bId)) {
+                auto& t = m_world->registry().get<TransformLocal>(ent);
+                const float bob = std::sin(alertTime * 4.0f + static_cast<float>(bId) * 0.7f) * 0.08f;
+                t.translation = glm::vec3(
+                    static_cast<float>(b->gridX) * kTileSize + 0.5f * kTileSize,
+                    1.25f + bob,
+                    static_cast<float>(b->gridZ) * kTileSize + 0.5f * kTileSize
+                );
+                t.rotation = glm::angleAxis(alertTime * 2.5f, glm::vec3(0.0f, 1.0f, 0.0f));
+            }
+        }
+    }
+
+    // 8. Update hover tile entity transform
+    if (m_world->registry().valid(m_hoverTileEntity)) {
+        auto& t = m_world->registry().get<TransformLocal>(m_hoverTileEntity);
+        if (m_hasHoverTile) {
+            t.translation = glm::vec3(
+                static_cast<float>(m_hoverX) * kTileSize + 0.5f * kTileSize,
+                0.015f,
+                static_cast<float>(m_hoverZ) * kTileSize + 0.5f * kTileSize
+            );
+            t.scale = glm::vec3(1.0f);
+        } else {
+            t.scale = glm::vec3(0.0f);
+        }
+    }
+
+    // 9. Update Ghost Preview entity
+    if (m_world->registry().valid(m_ghostEntity)) {
+        auto& t = m_world->registry().get<TransformLocal>(m_ghostEntity);
+        auto& mc = m_world->registry().get<MeshComponent>(m_ghostEntity);
+
+        if (m_selectedBuildType != BuildingType::None && m_hasHoverTile) {
+            t.translation = glm::vec3(
+                static_cast<float>(m_hoverX) * kTileSize + 0.5f * kTileSize,
+                0.0f,
+                static_cast<float>(m_hoverZ) * kTileSize + 0.5f * kTileSize
+            );
+            t.scale = glm::vec3(1.0f);
+            mc.mesh = m_cityMeshes.getBuildingMesh(m_selectedBuildType, m_simulation.getCurrentEra());
+
+            if (m_simulation.canPlace(m_hoverX, m_hoverZ, m_selectedBuildType)) {
+                mc.tint = glm::vec3(0.3f, 1.0f, 0.4f);
+                mc.emissiveIntensity = 0.8f;
+            } else {
+                mc.tint = glm::vec3(1.0f, 0.2f, 0.2f);
+                mc.emissiveIntensity = 0.8f;
+            }
+        } else {
+            t.scale = glm::vec3(0.0f);
+        }
+    }
+
+    updateTransforms(m_world->registry());
+}
+
+void EraSandboxModule::renderUi(World& world) {
+    const float winWidth = static_cast<float>(m_world->resource<PlatformGLFW>().framebufferSize().x);
+    const float winHeight = static_cast<float>(m_world->resource<PlatformGLFW>().framebufferSize().y);
+
+    // 1. Top Bar: Settlement Status, Stockpile, and Net Rates
+    ImGui::SetNextWindowPos(ImVec2(16.0f, 16.0f), ImGuiCond_Always);
+    ImGui::SetNextWindowSize(ImVec2(winWidth - 32.0f, 54.0f), ImGuiCond_Always);
+
+    ImGuiWindowFlags topBarFlags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
+                                   ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoScrollbar;
+
+    if (ImGui::Begin("TopStatusBar", nullptr, topBarFlags)) {
+        // Era Badge
+        ImGui::TextColored(ImVec4(1.0f, 0.82f, 0.2f, 1.0f), "[%s]", getEraName(m_simulation.getCurrentEra()).data());
+        ImGui::SameLine(0.0f, 20.0f);
+
+        // Settlers & Happiness
+        ImGui::Text("Settlers: %d/%d", m_simulation.getTotalPopulation(), m_simulation.getMaxPopulation());
+        ImGui::SameLine(0.0f, 8.0f);
+        ImGui::TextColored(ImVec4(0.4f, 0.9f, 0.4f, 1.0f), "(%.0f%% happy)", m_simulation.getAverageSatisfaction() * 100.0f);
+        ImGui::SameLine(0.0f, 20.0f);
+
+        // Gold
+        const float goldRate = m_simulation.getTaxIncomePerMinute();
+        ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.0f, 1.0f), "Gold: %.1f (+%.1f/m)",
+                           m_simulation.getResource(ResourceType::Gold), goldRate);
+        ImGui::SameLine(0.0f, 20.0f);
+
+        // Wood
+        const float woodRate = m_simulation.getNetRatePerMinute(ResourceType::Wood);
+        const ImVec4 woodCol = (woodRate >= 0.f) ? ImVec4(0.4f, 0.9f, 0.4f, 1.0f) : ImVec4(1.0f, 0.4f, 0.4f, 1.0f);
+        ImGui::Text("Wood: %.1f", m_simulation.getResource(ResourceType::Wood));
+        ImGui::SameLine(0.0f, 3.0f);
+        ImGui::TextColored(woodCol, "(%+.1f/m)", woodRate);
+        ImGui::SameLine(0.0f, 20.0f);
+
+        // Fish
+        const float fishRate = m_simulation.getNetRatePerMinute(ResourceType::Fish);
+        const ImVec4 fishCol = (fishRate >= 0.f) ? ImVec4(0.4f, 0.9f, 0.4f, 1.0f) : ImVec4(1.0f, 0.4f, 0.4f, 1.0f);
+        ImGui::Text("Fish: %.1f", m_simulation.getResource(ResourceType::Fish));
+        ImGui::SameLine(0.0f, 3.0f);
+        ImGui::TextColored(fishCol, "(%+.1f/m)", fishRate);
+        ImGui::SameLine(0.0f, 20.0f);
+
+        // Stone
+        const float stoneRate = m_simulation.getNetRatePerMinute(ResourceType::Stone);
+        ImGui::Text("Stone: %.1f", m_simulation.getResource(ResourceType::Stone));
+        if (stoneRate != 0.0f) {
+            ImGui::SameLine(0.0f, 3.0f);
+            ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "(%+.1f/m)", stoneRate);
+        }
+        ImGui::SameLine(0.0f, 20.0f);
+
+        // Couriers fleet
+        const int activeCouriers = m_simulation.getActiveCarrierCount();
+        const int totalCouriers = m_simulation.getTotalCarrierCount();
+        ImGui::TextColored(ImVec4(0.35f, 0.85f, 1.0f, 1.0f), "Couriers: %d/%d", activeCouriers, totalCouriers);
+
+        // FPS counter in top right
+        ImGui::SameLine(ImGui::GetWindowWidth() - 140.0f);
+        ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "FPS: %.0f (max 200)", ImGui::GetIO().Framerate);
+    }
+    ImGui::End();
+
+    // 2. Evolution Ready Banner
+    if (m_simulation.canEvolve()) {
+        const float bannerW = 480.0f;
+        ImGui::SetNextWindowPos(ImVec2((winWidth - bannerW) * 0.5f, 78.0f), ImGuiCond_Always);
+        ImGui::SetNextWindowSize(ImVec2(bannerW, 46.0f), ImGuiCond_Always);
+        ImGuiWindowFlags bannerFlags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
+                                       ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoScrollbar;
+
+        ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.15f, 0.35f, 0.20f, 0.92f));
+        if (ImGui::Begin("EvolutionBanner", nullptr, bannerFlags)) {
+            ImGui::TextColored(ImVec4(1.0f, 0.9f, 0.3f, 1.0f), "⚡ Settlement Ready for Bronze Age Evolution!");
+            ImGui::SameLine();
+            if (ImGui::Button("Evolve Now!")) {
+                m_simulation.evolveToNextEra();
+            }
+        }
+        ImGui::End();
+        ImGui::PopStyleColor();
+    }
+
+    // 3. Build Dock / Toolbar at Bottom
+    const float dockWidth = std::min(winWidth - 32.0f, 880.0f);
+    const float dockHeight = 74.0f;
+
+    ImGui::SetNextWindowPos(ImVec2((winWidth - dockWidth) * 0.5f, winHeight - dockHeight - 14.0f), ImGuiCond_Always);
+    ImGui::SetNextWindowSize(ImVec2(dockWidth, dockHeight), ImGuiCond_Always);
+
+    ImGuiWindowFlags dockFlags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
+                                 ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoScrollbar;
+
+    if (ImGui::Begin("BuildDock", nullptr, dockFlags)) {
+        const auto buildings = getAvailableBuildingsForEra(m_simulation.getCurrentEra());
+
+        for (BuildingType bType : buildings) {
+            if (bType == BuildingType::TownCenter) continue;
+
+            const BuildingDef& def = getBuildingDef(bType);
+            const bool isSelected = (m_selectedBuildType == bType && !m_demolishMode);
+            const bool canAfford = m_simulation.canAfford(bType);
+
+            if (isSelected) {
+                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.6f, 0.3f, 1.0f));
+            } else if (!canAfford) {
+                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.55f, 0.55f, 0.55f, 1.0f));
+            }
+
+            char btnLabel[64];
+            snprintf(btnLabel, sizeof(btnLabel), "%s##%d", def.name.data(), static_cast<int>(bType));
+
+            if (ImGui::Button(btnLabel, ImVec2(105.0f, 44.0f))) {
+                m_demolishMode = false;
+                m_selectedBuildType = isSelected ? BuildingType::None : bType;
+            }
+
+            if (isSelected || !canAfford) {
+                ImGui::PopStyleColor();
+            }
+
+            if (ImGui::IsItemHovered()) {
+                ImGui::BeginTooltip();
+                ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.3f, 1.0f), "%s", def.name.data());
+                ImGui::Text("%s", def.description.data());
+                ImGui::Separator();
+                ImGui::Text("Cost:");
+                for (size_t i = 0; i < kResourceCount; ++i) {
+                    const float c = def.cost.amounts[i];
+                    if (c > 0.0f) {
+                        const auto res = static_cast<ResourceType>(i);
+                        ImGui::BulletText("%s: %.0f", getResourceName(res).data(), c);
+                    }
+                }
+                ImGui::EndTooltip();
+            }
+            ImGui::SameLine();
+        }
+
+        // Demolish Mode Button
+        if (m_demolishMode) {
+            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.8f, 0.2f, 0.2f, 1.0f));
+        }
+        if (ImGui::Button("Demolish##Btn", ImVec2(80.0f, 44.0f))) {
+            m_demolishMode = !m_demolishMode;
+            m_selectedBuildType = BuildingType::None;
+        }
+        if (m_demolishMode) {
+            ImGui::PopStyleColor();
+        }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Demolish building (Refunds 50% resources)");
+        }
+
+        ImGui::SameLine();
+        if (m_selectedBuildType != BuildingType::None || m_demolishMode) {
+            if (ImGui::Button("Cancel##Btn", ImVec2(65.0f, 44.0f))) {
+                m_selectedBuildType = BuildingType::None;
+                m_demolishMode = false;
+            }
+        }
+    }
+    ImGui::End();
+
+    // 4. Building Inspector Window (Left side)
+    const BuildingInstance* inspected = m_simulation.getBuildingById(m_inspectedBuildingId);
+    if (inspected) {
+        ImGui::SetNextWindowPos(ImVec2(16.0f, 80.0f), ImGuiCond_FirstUseEver);
+        ImGui::SetNextWindowSize(ImVec2(320.0f, 340.0f), ImGuiCond_FirstUseEver);
+
+        if (ImGui::Begin("Building Inspector", nullptr)) {
+            const BuildingDef& def = getBuildingDef(inspected->type);
+            ImGui::TextColored(ImVec4(0.3f, 0.9f, 1.0f, 1.0f), "%s", def.name.data());
+            ImGui::Text("Position: [%d, %d]", inspected->gridX, inspected->gridZ);
+            ImGui::Separator();
+
+            if (inspected->type == BuildingType::TownCenter) {
+                ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.2f, 1.0f), "Settlement Anchor & Hearth");
+                ImGui::Text("Current Era: %s", getEraName(m_simulation.getCurrentEra()).data());
+                ImGui::Separator();
+
+                if (m_simulation.getCurrentEra() == EraType::StoneAge) {
+                    ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.2f, 1.0f), "Bronze Age Evolution Requirements:");
+                    const auto& eraDef = getEraDefinition(EraType::StoneAge);
+
+                    // Population check
+                    const bool popOk = (m_simulation.getTotalPopulation() >= eraDef.requiredPopulation);
+                    ImGui::TextColored(popOk ? ImVec4(0.4f, 1.0f, 0.4f, 1.0f) : ImVec4(1.0f, 0.4f, 0.4f, 1.0f),
+                                       "[%c] Population: %d / %d", popOk ? 'x' : ' ',
+                                       m_simulation.getTotalPopulation(), eraDef.requiredPopulation);
+
+                    // Resource checks
+                    for (const auto& req : eraDef.evolutionRequirements) {
+                        const float current = m_simulation.getResource(req.resource);
+                        const bool resOk = (current >= req.requiredAmount);
+                        ImGui::TextColored(resOk ? ImVec4(0.4f, 1.0f, 0.4f, 1.0f) : ImVec4(1.0f, 0.4f, 0.4f, 1.0f),
+                                           "[%c] %s: %.0f / %.0f", resOk ? 'x' : ' ',
+                                           getResourceName(req.resource).data(), current, req.requiredAmount);
+                    }
+
+                    ImGui::Separator();
+                    const bool ready = m_simulation.canEvolve();
+                    if (!ready) {
+                        ImGui::BeginDisabled();
+                    }
+                    if (ImGui::Button("⚡ Evolve to Bronze Age", ImVec2(-1.0f, 36.0f))) {
+                        m_simulation.evolveToNextEra();
+                    }
+                    if (!ready) {
+                        ImGui::EndDisabled();
+                    }
+                } else {
+                    ImGui::TextColored(ImVec4(0.3f, 1.0f, 0.4f, 1.0f), "Bronze Age Town Hall Active!");
+                    ImGui::BulletText("Stone lodge anchor with chieftain banner.");
+                    ImGui::BulletText("All residences upgraded to clay cottages (+60%% capacity).");
+                    ImGui::BulletText("All couriers equipped with high-speed wheelbarrows.");
+                    ImGui::BulletText("Stone Quarry, Wheat Farm, and Bakery unlocked.");
+                }
+
+                ImGui::Separator();
+                ImGui::TextColored(ImVec4(0.35f, 0.85f, 1.0f, 1.0f), "Central Logistics (Couriers):");
+                ImGui::Text("Warehouse Fleet: %d / %d busy", m_simulation.getActiveCarrierCount(), m_simulation.getTotalCarrierCount());
+                const auto& carriers = m_simulation.getCarriers();
+                for (size_t ci = 0; ci < carriers.size(); ++ci) {
+                    const auto& c = carriers[ci];
+                    if (c.state == CarrierState::IdleAtWarehouse) {
+                        ImGui::BulletText("Courier #%zu: Resting at warehouse", ci + 1);
+                    } else if (c.state == CarrierState::EnRouteToPickup) {
+                        const auto* targetB = m_simulation.getBuildingById(c.targetBuildingId);
+                        const std::string_view bName = targetB ? getBuildingDef(targetB->type).name : "facility";
+                        ImGui::BulletText("Courier #%zu: Dispatched to %s", ci + 1, bName.data());
+                    } else if (c.state == CarrierState::ReturningToWarehouse) {
+                        ImGui::BulletText("Courier #%zu: Delivering %.1f %s", ci + 1,
+                                          c.carriedAmount, getResourceName(c.carriedResource).data());
+                    }
+                }
+            } else if (inspected->type == BuildingType::Residence) {
+                ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.3f, 1.0f), "Settlers: %d / %d",
+                                   inspected->residence.currentInhabitants, inspected->residence.maxInhabitants);
+
+                ImGui::Separator();
+                ImGui::Text("Anno Needs Satisfaction:");
+
+                // Food satisfaction bar
+                ImGui::Text("Food (Fish): %.0f%%", inspected->residence.foodSatisfaction * 100.0f);
+                ImGui::ProgressBar(inspected->residence.foodSatisfaction, ImVec2(-1.0f, 12.0f), "");
+
+                // Warmth satisfaction bar
+                ImGui::Text("Warmth (Firewood): %.0f%%", inspected->residence.warmthSatisfaction * 100.0f);
+                ImGui::ProgressBar(inspected->residence.warmthSatisfaction, ImVec2(-1.0f, 12.0f), "");
+
+                ImGui::Separator();
+                const float currentTax = def.baseTaxIncomePerMinute * inspected->residence.overallSatisfaction *
+                                         (static_cast<float>(inspected->residence.currentInhabitants) / static_cast<float>(inspected->residence.maxInhabitants));
+                ImGui::Text("Tax Paid: %.2f gold/min", currentTax);
+            } else if (def.production.outputPerMinute > 0.0f) {
+                ImGui::TextColored(ImVec4(0.4f, 0.9f, 0.4f, 1.0f), "Production Facility");
+                ImGui::Text("Output: +%.1f %s/min", def.production.outputPerMinute,
+                            getResourceName(def.production.outputResource).data());
+
+                if (def.production.inputPerMinute > 0.0f) {
+                    ImGui::Text("Input: -%.1f %s/min", def.production.inputPerMinute,
+                                getResourceName(def.production.inputResource).data());
+                }
+
+                ImGui::Separator();
+                // 1. Internal Storage Buffer (Anno mechanics)
+                const float buf = inspected->production.internalBuffer;
+                const float maxBuf = inspected->production.maxBuffer;
+                ImGui::Text("Local Buffer: %.1f / %.1f %s", buf, maxBuf, getResourceName(def.production.outputResource).data());
+                ImGui::ProgressBar(buf / std::max(0.1f, maxBuf), ImVec2(-1.0f, 14.0f), "");
+
+                if (inspected->production.isBufferFull) {
+                    ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.2f, 1.0f), "[!] STORAGE FULL (Stalled)");
+                    ImGui::TextColored(ImVec4(0.85f, 0.85f, 0.85f, 1.0f), "Awaiting warehouse courier pickup...");
+                } else if (inspected->production.hasCourierAssigned) {
+                    ImGui::TextColored(ImVec4(0.2f, 0.9f, 1.0f, 1.0f), "Courier en route to collect goods!");
+                }
+
+                ImGui::Separator();
+                if (inspected->production.isWorking) {
+                    ImGui::TextColored(ImVec4(0.3f, 1.0f, 0.3f, 1.0f), "Status: Operating");
+                    const float progressFrac = inspected->production.progress / std::max(0.1f, def.production.cycleSeconds);
+                    ImGui::ProgressBar(progressFrac, ImVec2(-1.0f, 14.0f), "Cycle");
+                } else if (inspected->production.isBufferFull) {
+                    ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.2f, 1.0f), "Status: Halted (Storage Full)");
+                } else {
+                    ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "Status: Halted (Missing input)");
+                }
+            }
+
+            ImGui::Separator();
+            if (inspected->type != BuildingType::TownCenter) {
+                if (ImGui::Button("Demolish Building")) {
+                    uint32_t removedId = 0;
+                    m_simulation.demolishBuilding(inspected->gridX, inspected->gridZ, removedId);
+                    m_inspectedBuildingId = 0;
+                }
+            }
+        }
+        ImGui::End();
+    }
+
+    // 5. Controls & Info Helper (Right side)
+    ImGui::SetNextWindowPos(ImVec2(winWidth - 280.0f, 80.0f), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(264.0f, 220.0f), ImGuiCond_FirstUseEver);
+
+    if (ImGui::Begin("Controls & Info", nullptr, ImGuiWindowFlags_None)) {
+        ImGui::TextColored(ImVec4(0.3f, 0.9f, 1.0f, 1.0f), "Era City-Builder Controls");
+        ImGui::Separator();
+        if (m_hasHoverTile) {
+            ImGui::Text("Tile: [%d, %d]", m_hoverX, m_hoverZ);
+            const auto& cell = m_simulation.getCell(m_hoverX, m_hoverZ);
+            if (cell.type == CellType::Empty) {
+                ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "State: Empty land");
+            } else {
+                ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.3f, 1.0f), "State: %s",
+                                   getBuildingDef(cell.buildingType).name.data());
+            }
+        } else {
+            ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), "Tile: [Outside grid]");
+        }
+
+        ImGui::Separator();
+        ImGui::BulletText("LMB: Build / Inspect");
+        ImGui::BulletText("Shift + LMB: Continuous build");
+        ImGui::BulletText("RMB / Esc: Cancel build");
+        ImGui::BulletText("W/A/S/D: Pan camera");
+        ImGui::BulletText("Scroll: Zoom in/out");
+        ImGui::BulletText("RMB drag: Orbit view");
+    }
+    ImGui::End();
+}
+
+bool EraSandboxModule::renderFrame(World& world) {
+    const glm::ivec2 currentSize = world.resource<PlatformGLFW>().framebufferSize();
+    if (currentSize.x <= 0 || currentSize.y <= 0) {
+        return true;
+    }
+
+    uint32_t imageIndex = 0;
+    const VkResult acquired = world.resource<VulkanContext>().acquireNextImage(&imageIndex);
+    if (acquired == VK_ERROR_OUT_OF_DATE_KHR) {
+        world.resource<VulkanContext>().handleResize(WindowResizeEvent{currentSize.x, currentSize.y});
+        ImGui_ImplVulkan_SetMinImageCount(
+            static_cast<uint32_t>(std::max(2, static_cast<int>(world.resource<VulkanContext>().framebuffers().size()))));
+        return true;
+    }
+    if (acquired != VK_SUCCESS && acquired != VK_SUBOPTIMAL_KHR) {
+        return false;
+    }
+
+    VkCommandBuffer cmd = world.resource<VulkanContext>().commandBuffer(world.resource<VulkanContext>().currentFrame());
+    vkResetCommandBuffer(cmd, 0);
+
+    VkCommandBufferBeginInfo beginInfo{};
+    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    vkBeginCommandBuffer(cmd, &beginInfo);
+
+    if (m_enableShadows) {
+        world.resource<PbrRenderer>().recordShadowPass(cmd, world.registry(), world.resource<GpuMeshCache>());
+    }
+
+    // 1. HDR Render Pass
+    std::array<VkClearValue, 2> hdrClearValues{};
+    hdrClearValues[0].color = {{0.09f, 0.12f, 0.16f, 1.f}};
+    hdrClearValues[1].depthStencil = {1.f, 0};
+
+    VkRenderPassBeginInfo hdrPassInfo{};
+    hdrPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+    hdrPassInfo.renderPass = world.resource<VulkanContext>().hdrRenderPass();
+    hdrPassInfo.framebuffer = world.resource<VulkanContext>().hdrFramebuffer();
+    hdrPassInfo.renderArea.extent = world.resource<VulkanContext>().swapchainExtent();
+    hdrPassInfo.clearValueCount = static_cast<uint32_t>(hdrClearValues.size());
+    hdrPassInfo.pClearValues = hdrClearValues.data();
+
+    vkCmdBeginRenderPass(cmd, &hdrPassInfo, VK_SUBPASS_CONTENTS_INLINE);
+
+    const float aspect =
+        static_cast<float>(world.resource<VulkanContext>().swapchainExtent().width) /
+        static_cast<float>(std::max(1u, world.resource<VulkanContext>().swapchainExtent().height));
+    const CameraState camera = m_camera.getCameraState(aspect);
+
+    world.resource<PbrRenderer>().recordScene(cmd, world.registry(), world.resource<GpuMeshCache>(), world.resource<GpuTextureCache>(), camera);
+    world.resource<ParticleSystem>().record(cmd, camera);
+
+    vkCmdEndRenderPass(cmd);
+
+    // 2. Post process bloom
+    world.resource<PostProcessPipeline>().recordBloom(cmd);
+
+    // 3. Swapchain Presentation Pass
+    VkRenderPassBeginInfo renderPassInfo{};
+    renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+    renderPassInfo.renderPass = world.resource<VulkanContext>().renderPass();
+    renderPassInfo.framebuffer = world.resource<VulkanContext>().framebuffers()[imageIndex];
+    renderPassInfo.renderArea.extent = world.resource<VulkanContext>().swapchainExtent();
+    renderPassInfo.clearValueCount = 0;
+    renderPassInfo.pClearValues = nullptr;
+
+    vkCmdBeginRenderPass(cmd, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
+
+    world.resource<PostProcessPipeline>().recordComposite(cmd);
+
+    world.resource<ImGuiLayer>().beginFrame();
+    renderUi(world);
+    world.resource<ImGuiLayer>().endFrame(cmd);
+
+    vkCmdEndRenderPass(cmd);
+    vkEndCommandBuffer(cmd);
+
+    const VkResult presentResult = world.resource<VulkanContext>().submitAndPresent(imageIndex);
+    if (presentResult == VK_ERROR_OUT_OF_DATE_KHR || presentResult == VK_SUBOPTIMAL_KHR) {
+        const auto size = world.resource<PlatformGLFW>().framebufferSize();
+        if (size.x > 0 && size.y > 0) {
+            world.resource<VulkanContext>().handleResize(WindowResizeEvent{size.x, size.y});
+            ImGui_ImplVulkan_SetMinImageCount(
+                static_cast<uint32_t>(std::max(2, static_cast<int>(world.resource<VulkanContext>().framebuffers().size()))));
+        }
+    }
+
+    return true;
+}
+
+
+} // namespace engine::era

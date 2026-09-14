@@ -8,15 +8,6 @@ layout(push_constant) uniform Push {
     vec4 sunDir;
 } pc;
 
-vec3 acesTonemap(vec3 color) {
-    const float a = 2.51;
-    const float b = 0.03;
-    const float c = 2.43;
-    const float d = 0.59;
-    const float e = 0.14;
-    return clamp((color * (a * color + b)) / (color * (c * color + d) + e), 0.0, 1.0);
-}
-
 void main() {
     vec3 rayDir = normalize(vRayDir);
     vec3 sunDir = normalize(-pc.sunDir.xyz);
@@ -37,10 +28,9 @@ void main() {
     if (cosAngle > 0.0) {
         sky += vec3(1.0, 0.85, 0.6) * pow(cosAngle, 128.0) * 0.7;
         if (cosAngle > 0.9993) {
-            sky += vec3(1.0, 0.95, 0.8) * 8.0;
+            sky += vec3(1.0, 0.95, 0.8) * 15.0;
         }
     }
 
-    sky = acesTonemap(sky);
     outColor = vec4(sky, 1.0);
 }

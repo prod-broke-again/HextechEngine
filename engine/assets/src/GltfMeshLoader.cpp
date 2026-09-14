@@ -3,6 +3,10 @@
 #include "engine/core/Log.hpp"
 
 #include <cgltf.h>
+#include <glm/geometric.hpp>
+#include <glm/mat3x3.hpp>
+#include <glm/mat4x4.hpp>
+#include <glm/matrix.hpp>
 #include <glm/vec4.hpp>
 
 #include <cstring>
@@ -24,7 +28,8 @@ void readIndices(const cgltf_accessor* indexAcc, uint32_t baseVertex, std::vecto
     }
 }
 
-void appendPrimitive(const cgltf_primitive& primitive, GltfMeshPart& out) {
+void appendPrimitive(const cgltf_primitive& primitive, const glm::mat4& transform,
+                     const glm::mat3& normalMatrix, GltfMeshPart& out) {
     if (primitive.type != cgltf_primitive_type_triangles) {
         return;
     }
@@ -76,8 +81,11 @@ void appendPrimitive(const cgltf_primitive& primitive, GltfMeshPart& out) {
         }
 
         MeshVertex& vertex = out.mesh.vertices[baseVertex + static_cast<size_t>(v)];
-        vertex.position = readVec3(pos);
-        vertex.normal = readVec3(norm);
+        const glm::vec4 transformedPos = transform * glm::vec4(readVec3(pos), 1.f);
+        vertex.position = glm::vec3(transformedPos);
+        const glm::vec3 transformedNorm = normalMatrix * readVec3(norm);
+        const float normLen = glm::length(transformedNorm);
+        vertex.normal = normLen > 1e-6f ? (transformedNorm / normLen) : glm::vec3(0.f, 1.f, 0.f);
         vertex.uv = {uv[0], uv[1]};
         vertex.color = {1.f, 1.f, 1.f};
     }
@@ -102,13 +110,38 @@ std::vector<GltfMeshPart> GltfMeshLoader::extractMeshParts(const LoadedGltfCpu& 
     }
 
     const cgltf_data* data = gltf.data.get();
-    for (cgltf_size m = 0; m < data->meshes_count; ++m) {
-        const cgltf_mesh& mesh = data->meshes[m];
-        for (cgltf_size p = 0; p < mesh.primitives_count; ++p) {
-            GltfMeshPart part;
-            appendPrimitive(mesh.primitives[p], part);
-            if (!part.mesh.empty()) {
-                meshes.push_back(std::move(part));
+
+    if (data->nodes_count > 0) {
+        for (cgltf_size n = 0; n < data->nodes_count; ++n) {
+            const cgltf_node& node = data->nodes[n];
+            if (!node.mesh) {
+                continue;
+            }
+            float worldMatArr[16];
+            cgltf_node_transform_world(&node, worldMatArr);
+            glm::mat4 transform;
+            std::memcpy(&transform[0][0], worldMatArr, sizeof(float) * 16);
+            const glm::mat3 normalMatrix = glm::transpose(glm::inverse(glm::mat3(transform)));
+
+            for (cgltf_size p = 0; p < node.mesh->primitives_count; ++p) {
+                GltfMeshPart part;
+                appendPrimitive(node.mesh->primitives[p], transform, normalMatrix, part);
+                if (!part.mesh.empty()) {
+                    meshes.push_back(std::move(part));
+                }
+            }
+        }
+    } else {
+        const glm::mat4 identity{1.0f};
+        const glm::mat3 normId{1.0f};
+        for (cgltf_size m = 0; m < data->meshes_count; ++m) {
+            const cgltf_mesh& mesh = data->meshes[m];
+            for (cgltf_size p = 0; p < mesh.primitives_count; ++p) {
+                GltfMeshPart part;
+                appendPrimitive(mesh.primitives[p], identity, normId, part);
+                if (!part.mesh.empty()) {
+                    meshes.push_back(std::move(part));
+                }
             }
         }
     }

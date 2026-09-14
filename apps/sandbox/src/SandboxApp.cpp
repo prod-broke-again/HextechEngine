@@ -27,10 +27,6 @@ namespace engine {
 
 namespace {
 
-void onWindowResize(VulkanContext& vulkan, WindowResizeEvent& event) {
-    vulkan.handleResize(event);
-}
-
 entt::entity spawnMeshEntity(entt::registry& registry, const MeshComponent& meshComponent,
                              const glm::vec3& position, const glm::vec3& scale) {
     const entt::entity entity = registry.create();
@@ -49,19 +45,20 @@ entt::entity spawnMeshEntity(entt::registry& registry, uint32_t meshId, const gl
     return spawnMeshEntity(registry, meshComp, position, scale);
 }
 
-void spawnGltfModel(entt::registry& registry, AssetManager& assets, GpuMeshCache& meshes,
-                    GpuTextureCache& textures, const std::filesystem::path& path,
-                    const glm::vec3& position, float targetSize) {
+std::vector<entt::entity> spawnGltfModel(entt::registry& registry, AssetManager& assets, GpuMeshCache& meshes,
+                                         GpuTextureCache& textures, const std::filesystem::path& path,
+                                         const glm::vec3& position, float targetSize) {
+    std::vector<entt::entity> spawnedEntities;
     const AssetManager::GltfPtr gltf = assets.getOrLoadGltf(path);
     if (!gltf) {
         log(LogLevel::Warn, "spawnGltfModel: failed to load " + path.string());
-        return;
+        return spawnedEntities;
     }
 
     std::vector<GltfMeshPart> parts = GltfMeshLoader::extractMeshParts(*gltf);
     if (parts.empty()) {
         log(LogLevel::Warn, "spawnGltfModel: no mesh parts in " + path.filename().string());
-        return;
+        return spawnedEntities;
     }
 
     std::vector<GltfMeshPart> validParts;
@@ -72,7 +69,7 @@ void spawnGltfModel(entt::registry& registry, AssetManager& assets, GpuMeshCache
         }
     }
     if (validParts.empty()) {
-        return;
+        return spawnedEntities;
     }
 
     std::vector<MeshCpuData> meshData;
@@ -82,6 +79,7 @@ void spawnGltfModel(entt::registry& registry, AssetManager& assets, GpuMeshCache
     }
     ObjMeshLoader::normalize(meshData, targetSize);
 
+    spawnedEntities.reserve(validParts.size());
     for (size_t i = 0; i < validParts.size(); ++i) {
         const GltfMeshPart& part = validParts[i];
 
@@ -97,11 +95,13 @@ void spawnGltfModel(entt::registry& registry, AssetManager& assets, GpuMeshCache
             }
         }
 
-        spawnMeshEntity(registry, meshComp, position, {1.f, 1.f, 1.f});
+        const entt::entity ent = spawnMeshEntity(registry, meshComp, position, {1.f, 1.f, 1.f});
+        spawnedEntities.push_back(ent);
     }
 
     log(LogLevel::Info, "spawnGltfModel: spawned " + path.filename().string() + " (" +
                            std::to_string(validParts.size()) + " parts)");
+    return spawnedEntities;
 }
 
 std::string shaderPath(const char* name) {
@@ -124,9 +124,11 @@ void SandboxApp::setupInput() {
     m_inputMap.bind(Action::MoveBack, GLFW_KEY_S);
     m_inputMap.bind(Action::MoveLeft, GLFW_KEY_A);
     m_inputMap.bind(Action::MoveRight, GLFW_KEY_D);
+    m_inputMap.bind(Action::Sprint, GLFW_KEY_LEFT_SHIFT);
     m_inputMap.bind(Action::SpawnBox, GLFW_KEY_B);
     m_inputMap.bind(Action::Jump, GLFW_KEY_SPACE);
     m_inputMap.bind(Action::ToggleCameraMode, GLFW_KEY_F1);
+    m_inputMap.bind(Action::ToggleCursor, GLFW_KEY_ESCAPE);
     m_inputMap.bind(Action::InspectObject, GLFW_KEY_I);
     m_inputMap.bind(Action::SpawnTeapot, GLFW_KEY_T);
     m_inputMap.bind(Action::ShootSphere, GLFW_KEY_F);
@@ -134,6 +136,11 @@ void SandboxApp::setupInput() {
     m_inputMap.bindMouse(Action::Look, GLFW_MOUSE_BUTTON_RIGHT);
     m_inputMap.bindMouse(Action::ShootSphere, GLFW_MOUSE_BUTTON_LEFT);
     m_inputMap.bindMouse(Action::KickObject, GLFW_MOUSE_BUTTON_MIDDLE);
+}
+
+void SandboxApp::handleResize(const WindowResizeEvent& e) {
+    m_vulkan.handleResize(e);
+    m_postProcess.handleResize(e.width, e.height);
 }
 
 bool SandboxApp::initEngine() {
@@ -147,7 +154,7 @@ bool SandboxApp::initEngine() {
         return false;
     }
 
-    m_dispatcher.sink<WindowResizeEvent>().connect<&onWindowResize>(m_vulkan);
+    m_dispatcher.sink<WindowResizeEvent>().connect<&SandboxApp::handleResize>(*this);
 
     if (!m_imgui.init(m_vulkan, m_platform.window())) {
         return false;
@@ -161,7 +168,12 @@ bool SandboxApp::initEngine() {
     if (!m_renderer.initTextureCache(*m_textures)) {
         return false;
     }
-    m_debugDraw.init(m_vulkan);
+    if (!m_postProcess.init(m_vulkan)) {
+        return false;
+    }
+    if (!m_debugDraw.init(m_vulkan)) {
+        return false;
+    }
 
     shaderHotReloadWatchPath(shaderPath("pbr.vert").c_str());
     shaderHotReloadWatchPath(shaderPath("pbr.frag").c_str());
@@ -177,125 +189,286 @@ bool SandboxApp::initEngine() {
 
     m_time.reset();
     spawnScene();
+    setCursorCapture(true);
     return true;
 }
 
-void SandboxApp::spawnScene() {
-    const uint32_t floorMesh = m_meshes->upload(MeshBuilder::plane(20.f, {0.18f, 0.22f, 0.18f}));
+void SandboxApp::setCursorCapture(bool capture) {
+    m_cursorCaptured = capture;
+    m_platform.setCursorCaptured(capture);
+}
 
+void SandboxApp::respawnPlayer() {
+    m_character.setPosition(m_spawnPoint);
+    auto view = m_registry.view<TransformLocal, CameraComponent>();
+    for (const auto camEnt : view) {
+        auto& t = view.get<TransformLocal>(camEnt);
+        t.translation = m_spawnPoint + glm::vec3(0.0f, m_character.eyeHeight, 0.0f);
+        if (auto* ctrl = m_registry.try_get<FreeFlyController>(camEnt)) {
+            ctrl->yaw = -1.5707963f;
+            ctrl->pitch = 0.0f;
+        }
+    }
+    AudioEngine::instance().play2D("assets/sounds/test.wav", 0.6f);
+    log(LogLevel::Info, "Player reached boundary / killzone and was safely respawned at arena origin.");
+}
+
+void SandboxApp::spawnScene() {
+    m_demoPointLights.clear();
+
+    const float arenaHalf = 50.0f;
+    const float wallHeight = 6.0f;
+    const float wallHalfH = wallHeight * 0.5f;
+
+    // Helper lambda to create static physical boxes with visuals
+    auto createStaticBoxEntity = [this](const std::string& name, const glm::vec3& pos, const glm::vec3& halfExtents,
+                                         uint32_t meshId, const glm::vec3& tint, float roughness = 0.5f,
+                                         float metallic = 0.0f, float emissive = 0.0f) -> entt::entity {
+        const entt::entity ent = m_registry.create();
+        m_registry.emplace<TagComponent>(ent, TagComponent{name});
+        m_registry.emplace<TransformLocal>(ent, TransformLocal{pos});
+        m_registry.emplace<TransformWorld>(ent);
+        MeshComponent mc{};
+        mc.mesh = meshId;
+        mc.tint = tint;
+        mc.roughness = roughness;
+        mc.metallic = metallic;
+        mc.emissiveIntensity = emissive;
+        m_registry.emplace<MeshComponent>(ent, mc);
+        m_registry.emplace<MeshGeometryComponent>(ent, MeshGeometryComponent{MeshGeometryType::Box, "", halfExtents});
+        m_registry.emplace<RenderableTag>(ent);
+        m_registry.emplace<StaticColliderTag>(ent);
+        m_registry.emplace<RigidBodyComponent>(ent, RigidBodyComponent{.bodyIndex = UINT32_MAX, .dynamic = false});
+        m_registry.emplace<ColliderComponent>(ent, ColliderComponent{ColliderShapeType::Box, halfExtents, 0.0f, true, 0.0f});
+        createStaticBox(m_physics, m_registry, ent, halfExtents);
+        return ent;
+    };
+
+    // 1. Arena Floor (100x100m)
+    const uint32_t floorMesh = m_meshes->upload(MeshBuilder::plane(arenaHalf, {0.16f, 0.18f, 0.22f}));
     const entt::entity floorVisual = spawnMeshEntity(m_registry, floorMesh, {0.f, 0.f, 0.f}, {1.f, 1.f, 1.f}, {1.f, 1.f, 1.f});
-    m_registry.emplace<TagComponent>(floorVisual, TagComponent{"FloorVisual"});
-    m_registry.emplace<MeshGeometryComponent>(floorVisual, MeshGeometryComponent{MeshGeometryType::Plane, "", {20.f, 0.f, 0.f}});
+    m_registry.emplace<TagComponent>(floorVisual, TagComponent{"ArenaFloorVisual"});
+    m_registry.emplace<MeshGeometryComponent>(floorVisual, MeshGeometryComponent{MeshGeometryType::Plane, "", {arenaHalf, 0.f, 0.f}});
 
     const entt::entity floorCollider = m_registry.create();
-    m_registry.emplace<TagComponent>(floorCollider, TagComponent{"FloorCollider"});
+    m_registry.emplace<TagComponent>(floorCollider, TagComponent{"ArenaFloorCollider"});
     m_registry.emplace<TransformLocal>(floorCollider, TransformLocal{{0.f, -0.5f, 0.f}});
     m_registry.emplace<StaticColliderTag>(floorCollider);
-    m_registry.emplace<RigidBodyComponent>(floorCollider);
-    m_registry.emplace<ColliderComponent>(floorCollider, ColliderComponent{ColliderShapeType::Box, {20.f, 0.5f, 20.f}, 0.f, true, 0.f});
-    createStaticBox(m_physics, m_registry, floorCollider, {20.f, 0.5f, 20.f});
+    m_registry.emplace<RigidBodyComponent>(floorCollider, RigidBodyComponent{.bodyIndex = UINT32_MAX, .dynamic = false});
+    m_registry.emplace<ColliderComponent>(floorCollider, ColliderComponent{ColliderShapeType::Box, {arenaHalf, 0.5f, arenaHalf}, 0.f, true, 0.f});
+    createStaticBox(m_physics, m_registry, floorCollider, {arenaHalf, 0.5f, arenaHalf});
 
-    const entt::entity charAnchor = m_registry.create();
-    m_registry.emplace<TagComponent>(charAnchor, TagComponent{"CharacterModel"});
-    m_registry.emplace<TransformLocal>(charAnchor, TransformLocal{{0.f, 0.f, 0.f}});
-    m_registry.emplace<TransformWorld>(charAnchor);
-    m_registry.emplace<MeshGeometryComponent>(charAnchor, MeshGeometryComponent{
-        MeshGeometryType::Model,
-        "assets/armored+female+character+3d+model (3).glb",
-        {1.8f, 0.f, 0.f}
-    });
-    spawnGltfModel(m_registry, m_assets, *m_meshes, *m_textures,
-                   "assets/armored+female+character+3d+model (3).glb", {0.f, 0.f, 0.f}, 1.8f);
+    // 2. Perimeter Boundary Walls (North, South, East, West - 6m high)
+    const uint32_t wallMeshX = m_meshes->upload(MeshBuilder::box({arenaHalf, wallHalfH, 0.5f}, {0.14f, 0.16f, 0.20f}));
+    const uint32_t wallMeshZ = m_meshes->upload(MeshBuilder::box({0.5f, wallHalfH, arenaHalf}, {0.14f, 0.16f, 0.20f}));
+    const uint32_t trimMeshX = m_meshes->upload(MeshBuilder::box({arenaHalf, 0.08f, 0.55f}, {0.1f, 0.75f, 1.0f}));
+    const uint32_t trimMeshZ = m_meshes->upload(MeshBuilder::box({0.55f, 0.08f, arenaHalf}, {0.1f, 0.75f, 1.0f}));
 
-    m_cubeComp.mesh = m_meshes->upload(MeshBuilder::box({0.5f, 0.5f, 0.5f}, {0.8f, 0.2f, 0.2f}));
+    // North & South walls
+    createStaticBoxEntity("WallNorth", {0.f, wallHalfH, -arenaHalf}, {arenaHalf, wallHalfH, 0.5f}, wallMeshX, {0.14f, 0.16f, 0.20f}, 0.7f);
+    createStaticBoxEntity("WallSouth", {0.f, wallHalfH, arenaHalf}, {arenaHalf, wallHalfH, 0.5f}, wallMeshX, {0.14f, 0.16f, 0.20f}, 0.7f);
+    // East & West walls
+    createStaticBoxEntity("WallEast", {arenaHalf, wallHalfH, 0.f}, {0.5f, wallHalfH, arenaHalf}, wallMeshZ, {0.14f, 0.16f, 0.20f}, 0.7f);
+    createStaticBoxEntity("WallWest", {-arenaHalf, wallHalfH, 0.f}, {0.5f, wallHalfH, arenaHalf}, wallMeshZ, {0.14f, 0.16f, 0.20f}, 0.7f);
+
+    // Glowing perimeter neon trims along wall tops
+    createStaticBoxEntity("TrimNorth", {0.f, wallHeight + 0.08f, -arenaHalf}, {arenaHalf, 0.08f, 0.55f}, trimMeshX, {0.1f, 0.75f, 1.0f}, 0.2f, 0.1f, 6.0f);
+    createStaticBoxEntity("TrimSouth", {0.f, wallHeight + 0.08f, arenaHalf}, {arenaHalf, 0.08f, 0.55f}, trimMeshX, {0.1f, 0.75f, 1.0f}, 0.2f, 0.1f, 6.0f);
+    createStaticBoxEntity("TrimEast", {arenaHalf, wallHeight + 0.08f, 0.f}, {0.55f, 0.08f, arenaHalf}, trimMeshZ, {0.1f, 0.75f, 1.0f}, 0.2f, 0.1f, 6.0f);
+    createStaticBoxEntity("TrimWest", {-arenaHalf, wallHeight + 0.08f, 0.f}, {0.55f, 0.08f, arenaHalf}, trimMeshZ, {0.1f, 0.75f, 1.0f}, 0.2f, 0.1f, 6.0f);
+
+    // 3. Central Showroom Pavilion Platform (48x0.8x28m)
+    const glm::vec3 platformCenter{0.f, 0.4f, -6.f};
+    const glm::vec3 platformHalf{24.0f, 0.4f, 14.0f};
+    const uint32_t platformMesh = m_meshes->upload(MeshBuilder::box(platformHalf, {0.22f, 0.24f, 0.28f}));
+    createStaticBoxEntity("CentralPlatform", platformCenter, platformHalf, platformMesh, {0.22f, 0.24f, 0.28f}, 0.3f, 0.3f);
+
+    // Platform Stairs on South Side (facing player spawn)
+    const uint32_t stepMesh1 = m_meshes->upload(MeshBuilder::box({8.0f, 0.13f, 0.7f}, {0.26f, 0.28f, 0.32f}));
+    const uint32_t stepMesh2 = m_meshes->upload(MeshBuilder::box({8.0f, 0.26f, 0.6f}, {0.26f, 0.28f, 0.32f}));
+    const uint32_t stepMesh3 = m_meshes->upload(MeshBuilder::box({8.0f, 0.39f, 0.5f}, {0.26f, 0.28f, 0.32f}));
+    createStaticBoxEntity("PlatformStep1", {0.f, 0.13f, 9.4f}, {8.0f, 0.13f, 0.7f}, stepMesh1, {0.26f, 0.28f, 0.32f}, 0.4f);
+    createStaticBoxEntity("PlatformStep2", {0.f, 0.26f, 8.4f}, {8.0f, 0.26f, 0.6f}, stepMesh2, {0.26f, 0.28f, 0.32f}, 0.4f);
+    createStaticBoxEntity("PlatformStep3", {0.f, 0.39f, 7.6f}, {8.0f, 0.39f, 0.5f}, stepMesh3, {0.26f, 0.28f, 0.32f}, 0.4f);
+
+    // 4. Architectural Columns with Emissive Neon Rings & Point Lights
+    const uint32_t colMesh = m_meshes->upload(MeshBuilder::box({0.7f, 3.5f, 0.7f}, {0.18f, 0.20f, 0.24f}));
+    const uint32_t beaconRingMesh = m_meshes->upload(MeshBuilder::box({0.85f, 0.20f, 0.85f}, {1.0f, 1.0f, 1.0f}));
+    const uint32_t lightMarkerMesh = m_meshes->upload(MeshBuilder::sphere(0.20f, 16, 16, {1.f, 1.f, 1.f}));
+
+    struct PillarConfig {
+        glm::vec3 pos;
+        glm::vec3 color;
+        const char* name;
+    };
+    const PillarConfig pillars[4] = {
+        { {-20.f, 3.5f, -17.f}, {0.1f, 0.85f, 1.0f}, "Pillar_Cyan" },
+        { { 20.f, 3.5f, -17.f}, {1.0f, 0.20f, 0.85f}, "Pillar_Magenta" },
+        { {-20.f, 3.5f,   5.f}, {1.0f, 0.70f, 0.15f}, "Pillar_Amber" },
+        { { 20.f, 3.5f,   5.f}, {0.15f, 1.0f, 0.50f}, "Pillar_Emerald" },
+    };
+
+    for (const auto& p : pillars) {
+        // Base column
+        createStaticBoxEntity(std::string(p.name) + "_Base", p.pos, {0.7f, 3.5f, 0.7f}, colMesh, {0.18f, 0.20f, 0.24f}, 0.5f);
+        // Emissive neon ring near top
+        createStaticBoxEntity(std::string(p.name) + "_Neon", {p.pos.x, 6.2f, p.pos.z}, {0.85f, 0.20f, 0.85f}, beaconRingMesh, p.color, 0.1f, 0.1f, 12.0f);
+
+        // Point Light above column
+        const entt::entity lightEnt = m_registry.create();
+        m_registry.emplace<TagComponent>(lightEnt, TagComponent{std::string(p.name) + "_Light"});
+        m_registry.emplace<TransformLocal>(lightEnt, TransformLocal{{p.pos.x, 6.7f, p.pos.z}});
+        m_registry.emplace<TransformWorld>(lightEnt);
+        m_registry.emplace<PointLightComponent>(lightEnt, PointLightComponent{
+            .color = p.color,
+            .intensity = 26.0f,
+            .radius = 18.0f
+        });
+        MeshComponent markerComp{};
+        markerComp.mesh = lightMarkerMesh;
+        markerComp.tint = p.color;
+        markerComp.metallic = 0.1f;
+        markerComp.roughness = 0.1f;
+        markerComp.emissiveIntensity = 10.0f;
+        m_registry.emplace<MeshComponent>(lightEnt, markerComp);
+        m_registry.emplace<MeshGeometryComponent>(lightEnt, MeshGeometryComponent{MeshGeometryType::Sphere, "", {0.20f, 0.f, 0.f}});
+        m_registry.emplace<RenderableTag>(lightEnt);
+        m_demoPointLights.push_back(lightEnt);
+    }
+
+    // 5. Physics Playground (Dynamic Crates Pyramid on Left Wing, X = -34)
+    m_cubeComp.mesh = m_meshes->upload(MeshBuilder::box({0.5f, 0.5f, 0.5f}, {0.75f, 0.45f, 0.25f}));
     m_cubeComp.metallic = 0.1f;
-    m_cubeComp.roughness = 0.8f;
+    m_cubeComp.roughness = 0.7f;
 
-    m_sphereComp.mesh = m_meshes->upload(MeshBuilder::sphere(0.4f, 24, 24, {0.2f, 0.65f, 0.95f}));
+    m_sphereComp.mesh = m_meshes->upload(MeshBuilder::sphere(0.4f, 24, 24, {0.2f, 0.75f, 1.0f}));
     m_sphereComp.tint = {0.25f, 0.75f, 1.0f};
     m_sphereComp.metallic = 0.9f;
     m_sphereComp.roughness = 0.15f;
 
+    auto spawnDynamicCrate = [this](const glm::vec3& pos, const glm::vec3& tint) {
+        const entt::entity ent = m_registry.create();
+        m_registry.emplace<TagComponent>(ent, TagComponent{"DynamicCrate"});
+        m_registry.emplace<TransformLocal>(ent, TransformLocal{pos});
+        m_registry.emplace<TransformWorld>(ent);
+        MeshComponent mc = m_cubeComp;
+        mc.tint = tint;
+        m_registry.emplace<MeshComponent>(ent, mc);
+        m_registry.emplace<MeshGeometryComponent>(ent, MeshGeometryComponent{MeshGeometryType::Box, "", {0.5f, 0.5f, 0.5f}});
+        m_registry.emplace<RenderableTag>(ent);
+        m_registry.emplace<RigidBodyComponent>(ent, RigidBodyComponent{.bodyIndex = UINT32_MAX, .dynamic = true});
+        m_registry.emplace<ColliderComponent>(ent, ColliderComponent{ColliderShapeType::Box, {0.5f, 0.5f, 0.5f}, 0.5f, false, 2.0f});
+        createDynamicBox(m_physics, m_registry, ent, {0.5f, 0.5f, 0.5f}, 2.0f);
+    };
+
+    // 3-2-1 pyramid of crates at X = -34, Z = -6
+    const float pyrX = -34.0f;
+    const float pyrZ = -6.0f;
+    spawnDynamicCrate({pyrX, 0.55f, pyrZ - 1.15f}, {0.8f, 0.4f, 0.2f});
+    spawnDynamicCrate({pyrX, 0.55f, pyrZ},         {0.75f, 0.5f, 0.25f});
+    spawnDynamicCrate({pyrX, 0.55f, pyrZ + 1.15f}, {0.85f, 0.45f, 0.2f});
+    spawnDynamicCrate({pyrX, 1.6f,  pyrZ - 0.58f}, {0.7f, 0.35f, 0.18f});
+    spawnDynamicCrate({pyrX, 1.6f,  pyrZ + 0.58f}, {0.7f, 0.35f, 0.18f});
+    spawnDynamicCrate({pyrX, 2.65f, pyrZ},         {0.9f, 0.6f, 0.3f});
+
+    // 6. Target Range on Right Wing (X = +34)
+    const float rangeX = 34.0f;
+    const float rangeZ = -6.0f;
+    const uint32_t tableMesh = m_meshes->upload(MeshBuilder::box({1.0f, 0.4f, 3.5f}, {0.3f, 0.32f, 0.36f}));
+    createStaticBoxEntity("TargetStand", {rangeX, 0.4f, rangeZ}, {1.0f, 0.4f, 3.5f}, tableMesh, {0.3f, 0.32f, 0.36f}, 0.4f);
+
+    auto spawnTargetSphere = [this](const glm::vec3& pos, const glm::vec3& tint) {
+        const entt::entity ent = m_registry.create();
+        m_registry.emplace<TagComponent>(ent, TagComponent{"TargetSphere"});
+        m_registry.emplace<TransformLocal>(ent, TransformLocal{pos});
+        m_registry.emplace<TransformWorld>(ent);
+        MeshComponent mc = m_sphereComp;
+        mc.tint = tint;
+        m_registry.emplace<MeshComponent>(ent, mc);
+        m_registry.emplace<MeshGeometryComponent>(ent, MeshGeometryComponent{MeshGeometryType::Sphere, "", {0.4f, 0.f, 0.f}});
+        m_registry.emplace<RenderableTag>(ent);
+        m_registry.emplace<RigidBodyComponent>(ent, RigidBodyComponent{.bodyIndex = UINT32_MAX, .dynamic = true});
+        m_registry.emplace<ColliderComponent>(ent, ColliderComponent{ColliderShapeType::Sphere, {0.4f, 0.4f, 0.4f}, 0.5f, false, 1.5f});
+        createDynamicSphere(m_physics, m_registry, ent, 0.4f, 1.5f);
+    };
+
+    spawnTargetSphere({rangeX, 1.25f, rangeZ - 2.0f}, {0.95f, 0.2f, 0.2f});
+    spawnTargetSphere({rangeX, 1.25f, rangeZ - 0.7f}, {0.2f, 0.9f, 0.3f});
+    spawnTargetSphere({rangeX, 1.25f, rangeZ + 0.7f}, {0.2f, 0.4f, 1.0f});
+    spawnTargetSphere({rangeX, 1.25f, rangeZ + 2.0f}, {1.0f, 0.85f, 0.1f});
+
+    // 7. Showroom Turntable Stands & BMW Cars
+    const float standY = 0.8f + 0.2f; // on top of platform (Y=0.8) + halfHeight (0.2) = 1.0f
+    const float turntableRadius = 3.6f;
+    const float turntableHalfH = 0.2f;
+    const uint32_t turntableMesh = m_meshes->upload(MeshBuilder::cylinder(turntableRadius, turntableHalfH, 48, {0.18f, 0.20f, 0.24f}));
+    const uint32_t ringMeshCyan = m_meshes->upload(MeshBuilder::cylinder(turntableRadius + 0.08f, 0.04f, 48, {0.1f, 0.75f, 1.0f}));
+    const uint32_t ringMeshAmber = m_meshes->upload(MeshBuilder::cylinder(turntableRadius + 0.08f, 0.04f, 48, {1.0f, 0.75f, 0.15f}));
+
+    // Helper for non-colliding emissive visual meshes
+    auto spawnGlowingRing = [this](const std::string& name, const glm::vec3& pos, uint32_t meshId, const glm::vec3& tint, float emissive) {
+        MeshComponent mc{};
+        mc.mesh = meshId;
+        mc.tint = tint;
+        mc.roughness = 0.1f;
+        mc.metallic = 0.1f;
+        mc.emissiveIntensity = emissive;
+        const entt::entity ent = spawnMeshEntity(m_registry, mc, pos, {1.f, 1.f, 1.f});
+        m_registry.emplace<TagComponent>(ent, TagComponent{name});
+        return ent;
+    };
+
+    // Stand 1: BMW M3 GTR (Left turntable, X = -12.0)
+    const glm::vec3 stand1Pos{-12.0f, standY, -6.0f};
+    createStaticBoxEntity("Turntable1_Base", stand1Pos, {turntableRadius, turntableHalfH, turntableRadius}, turntableMesh, {0.18f, 0.20f, 0.24f}, 0.25f, 0.2f);
+    spawnGlowingRing("Turntable1_Rim", {stand1Pos.x, stand1Pos.y + turntableHalfH + 0.02f, stand1Pos.z}, ringMeshCyan, {0.1f, 0.75f, 1.0f}, 8.0f);
+
+    // Stand 2: BMW M3 NFS (Right turntable, X = +12.0)
+    const glm::vec3 stand2Pos{12.0f, standY, -6.0f};
+    createStaticBoxEntity("Turntable2_Base", stand2Pos, {turntableRadius, turntableHalfH, turntableRadius}, turntableMesh, {0.18f, 0.20f, 0.24f}, 0.25f, 0.2f);
+    spawnGlowingRing("Turntable2_Rim", {stand2Pos.x, stand2Pos.y + turntableHalfH + 0.02f, stand2Pos.z}, ringMeshAmber, {1.0f, 0.75f, 0.15f}, 8.0f);
+
+    // Car surface level: standY + turntableHalfH = 1.0f + 0.2f = 1.2f
+    const float carSpawnY = standY + turntableHalfH;
+    m_car1Entities = spawnGltfModel(m_registry, m_assets, *m_meshes, *m_textures,
+                                    "assets/bmw_m3_gtr.glb", {stand1Pos.x, carSpawnY, stand1Pos.z}, 4.8f);
+    m_car2Entities = spawnGltfModel(m_registry, m_assets, *m_meshes, *m_textures,
+                                    "assets/bmw_m3_nfs.glb", {stand2Pos.x, carSpawnY, stand2Pos.z}, 4.8f);
+
+    // Showroom Overhead Spotlights above each car
+    auto spawnShowroomSpotlight = [this](const std::string& name, const glm::vec3& pos, const glm::vec3& color, float intensity) {
+        const entt::entity lightEnt = m_registry.create();
+        m_registry.emplace<TagComponent>(lightEnt, TagComponent{name});
+        m_registry.emplace<TransformLocal>(lightEnt, TransformLocal{pos});
+        m_registry.emplace<TransformWorld>(lightEnt);
+        m_registry.emplace<PointLightComponent>(lightEnt, PointLightComponent{
+            .color = color,
+            .intensity = intensity,
+            .radius = 22.0f
+        });
+        m_demoPointLights.push_back(lightEnt);
+    };
+    spawnShowroomSpotlight("Showroom_Light_GTR", {stand1Pos.x, 6.2f, stand1Pos.z}, {0.9f, 0.95f, 1.0f}, 35.0f);
+    spawnShowroomSpotlight("Showroom_Light_NFS", {stand2Pos.x, 6.2f, stand2Pos.z}, {1.0f, 0.92f, 0.82f}, 35.0f);
+
     m_renderer.setLightDir(m_sunDirection);
 
-    MeshCpuData teapotData = ObjMeshLoader::loadFromFile("assets/teapot.obj");
-    if (!teapotData.empty()) {
-        ObjMeshLoader::normalize(teapotData, 1.0f);
-        m_teapotCpuData = teapotData;
-        m_teapotComp.mesh = m_meshes->upload(teapotData);
-        m_teapotComp.tint = {0.95f, 0.60f, 0.20f};
-        m_teapotComp.metallic = 0.85f;
-        m_teapotComp.roughness = 0.2f;
-        
-        m_teapotVertices.clear();
-        m_teapotVertices.reserve(teapotData.vertices.size());
-        for (const auto& v : teapotData.vertices) {
-            m_teapotVertices.push_back(v.position);
-        }
-        
-        m_hasTeapot = true;
-
-        const entt::entity teapotEnt = spawnMeshEntity(m_registry, m_teapotComp, {1.8f, 0.0f, 0.0f}, {1.f, 1.f, 1.f});
-        m_registry.emplace<TagComponent>(teapotEnt, TagComponent{"Teapot"});
-        m_registry.emplace<MeshGeometryComponent>(teapotEnt, MeshGeometryComponent{MeshGeometryType::Teapot, "assets/teapot.obj", {1.f, 0.f, 0.f}});
-        m_registry.emplace<ColliderComponent>(teapotEnt, ColliderComponent{ColliderShapeType::ConvexHull, {0.5f, 0.5f, 0.5f}, 0.5f, false, 1.0f});
-    }
-
-    // Demo Point Lights
-    const uint32_t lightMarkerMesh = m_meshes->upload(MeshBuilder::sphere(0.12f, 16, 16, {1.f, 1.f, 1.f}));
-
-    // 1. Warm gold light near teapots
-    {
-        const entt::entity light1 = m_registry.create();
-        m_registry.emplace<TagComponent>(light1, TagComponent{"WarmPointLight"});
-        m_registry.emplace<TransformLocal>(light1, TransformLocal{{2.2f, 1.6f, 0.6f}});
-        m_registry.emplace<TransformWorld>(light1);
-        m_registry.emplace<PointLightComponent>(light1, PointLightComponent{
-            .color = {1.0f, 0.65f, 0.2f},
-            .intensity = 15.0f,
-            .radius = 8.0f
-        });
-        MeshComponent markerComp{};
-        markerComp.mesh = lightMarkerMesh;
-        markerComp.tint = {1.0f, 0.65f, 0.2f};
-        markerComp.metallic = 0.1f;
-        markerComp.roughness = 0.2f;
-        m_registry.emplace<MeshComponent>(light1, markerComp);
-        m_registry.emplace<MeshGeometryComponent>(light1, MeshGeometryComponent{MeshGeometryType::Sphere, "", {0.12f, 0.f, 0.f}});
-        m_registry.emplace<RenderableTag>(light1);
-        m_demoPointLights.push_back(light1);
-    }
-
-    // 2. Cyan light near character / center
-    {
-        const entt::entity light2 = m_registry.create();
-        m_registry.emplace<TagComponent>(light2, TagComponent{"CyanPointLight"});
-        m_registry.emplace<TransformLocal>(light2, TransformLocal{{-2.0f, 2.0f, -0.5f}});
-        m_registry.emplace<TransformWorld>(light2);
-        m_registry.emplace<PointLightComponent>(light2, PointLightComponent{
-            .color = {0.2f, 0.75f, 1.0f},
-            .intensity = 18.0f,
-            .radius = 10.0f
-        });
-        MeshComponent markerComp{};
-        markerComp.mesh = lightMarkerMesh;
-        markerComp.tint = {0.2f, 0.75f, 1.0f};
-        markerComp.metallic = 0.1f;
-        markerComp.roughness = 0.2f;
-        m_registry.emplace<MeshComponent>(light2, markerComp);
-        m_registry.emplace<MeshGeometryComponent>(light2, MeshGeometryComponent{MeshGeometryType::Sphere, "", {0.12f, 0.f, 0.f}});
-        m_registry.emplace<RenderableTag>(light2);
-        m_demoPointLights.push_back(light2);
-    }
+    // 8. Player & Camera Initialization (facing North towards the arena)
+    m_spawnPoint = {0.0f, 0.8f, 22.0f};
 
     const entt::entity camera = m_registry.create();
     m_registry.emplace<TagComponent>(camera, TagComponent{"MainCamera"});
-    m_registry.emplace<TransformLocal>(camera, TransformLocal{{0.f, 2.f, 6.f}});
+    m_registry.emplace<TransformLocal>(camera, TransformLocal{m_spawnPoint + glm::vec3(0.f, m_character.eyeHeight, 0.f)});
     m_registry.emplace<TransformWorld>(camera);
     m_registry.emplace<CameraComponent>(camera);
-    m_registry.emplace<FreeFlyController>(camera);
+    FreeFlyController controller{};
+    controller.yaw = -1.5707963f; // -90 deg: looking North towards -Z
+    controller.pitch = 0.0f;
+    controller.lookSensitivity = m_mouseSensitivity;
+    m_registry.emplace<FreeFlyController>(camera, controller);
 
-    m_character.init(m_physics, {0.0f, 0.5f, 6.0f});
+    m_character.init(m_physics, m_spawnPoint);
+    m_cameraMode = CameraMode::FirstPerson;
 }
 
 void SandboxApp::toggleCameraMode() {
@@ -365,6 +538,7 @@ void SandboxApp::spawnDynamicObject(const MeshComponent& meshComp, const glm::ve
 }
 
 void SandboxApp::spawnDynamicConvexObject(const MeshComponent& meshComp, const std::vector<glm::vec3>& vertices) {
+    if (vertices.empty()) return;
     auto view = m_registry.view<TransformLocal, CameraComponent>();
     if (view.begin() == view.end()) return;
     auto camEntity = *view.begin();
@@ -380,11 +554,10 @@ void SandboxApp::spawnDynamicConvexObject(const MeshComponent& meshComp, const s
     glm::vec3 spawnPos = camTransform.translation + (forward * 2.0f);
 
     const entt::entity entity = m_registry.create();
-    m_registry.emplace<TagComponent>(entity, TagComponent{"DynamicTeapot"});
+    m_registry.emplace<TagComponent>(entity, TagComponent{"DynamicConvex"});
     m_registry.emplace<TransformLocal>(entity, TransformLocal{spawnPos});
     m_registry.emplace<TransformWorld>(entity);
     m_registry.emplace<MeshComponent>(entity, meshComp);
-    m_registry.emplace<MeshGeometryComponent>(entity, MeshGeometryComponent{MeshGeometryType::Teapot, "assets/teapot.obj", {1.f, 0.f, 0.f}});
     m_registry.emplace<RenderableTag>(entity);
     m_registry.emplace<RigidBodyComponent>(entity);
     m_registry.emplace<ColliderComponent>(entity, ColliderComponent{ColliderShapeType::ConvexHull, {0.5f, 0.5f, 0.5f}, 0.5f, false, 1.0f});
@@ -453,6 +626,16 @@ void SandboxApp::updateFrame(float deltaTime) {
     const bool mouseCaptured = ImGui::GetIO().WantCaptureMouse;
     const bool keyboardCaptured = ImGui::GetIO().WantCaptureKeyboard;
 
+    // Toggle cursor capture with ESC or ToggleCursor
+    if (m_inputMap.actionPressed(m_input, Action::ToggleCursor) || m_input.keyPressed(GLFW_KEY_ESCAPE)) {
+        setCursorCapture(!m_cursorCaptured);
+    }
+
+    // In UI mode, clicking on empty 3D viewport recaptures cursor
+    if (!m_cursorCaptured && !mouseCaptured && m_input.mouseButtonPressed(GLFW_MOUSE_BUTTON_LEFT)) {
+        setCursorCapture(true);
+    }
+
     if (!keyboardCaptured) {
         if (m_inputMap.actionPressed(m_input, Action::ToggleCameraMode)) {
             toggleCameraMode();
@@ -468,12 +651,25 @@ void SandboxApp::updateFrame(float deltaTime) {
             auto& camTransform = view.get<TransformLocal>(camEntity);
             auto& controller = view.get<FreeFlyController>(camEntity);
 
-            if (!mouseCaptured && m_inputMap.actionDown(m_input, Action::Look)) {
+            // CS2 / Apex Legends style direct mouse steering
+            if (m_cursorCaptured) {
                 const glm::vec2 delta = m_inputMap.lookDelta();
-                controller.yaw += delta.x * controller.lookSensitivity;
-                controller.pitch -= delta.y * controller.lookSensitivity;
-                controller.pitch = std::clamp(controller.pitch, -1.4f, 1.4f);
+                if (delta.x != 0.f || delta.y != 0.f) {
+                    controller.yaw += delta.x * m_mouseSensitivity;
+                    controller.pitch -= delta.y * m_mouseSensitivity;
+                    controller.pitch = std::clamp(controller.pitch, -1.52f, 1.52f);
+                }
+            } else if (!mouseCaptured && m_inputMap.actionDown(m_input, Action::Look)) {
+                // Secondary fallback when cursor is released in UI mode: hold RMB to look
+                const glm::vec2 delta = m_inputMap.lookDelta();
+                controller.yaw += delta.x * m_mouseSensitivity;
+                controller.pitch -= delta.y * m_mouseSensitivity;
+                controller.pitch = std::clamp(controller.pitch, -1.52f, 1.52f);
             }
+
+            // Tactical Sprint (Shift)
+            const bool isSprinting = !keyboardCaptured && m_inputMap.actionDown(m_input, Action::Sprint);
+            m_character.walkSpeed = isSprinting ? 9.5f : 5.5f;
 
             glm::vec2 moveInput{0.0f};
             bool jump = false;
@@ -494,7 +690,7 @@ void SandboxApp::updateFrame(float deltaTime) {
             camTransform.translation = m_character.position() + glm::vec3(0.0f, m_character.eyeHeight, 0.0f);
         }
     } else {
-        updateFreeFlyCamera(m_registry, m_input, m_inputMap, deltaTime);
+        updateFreeFlyCamera(m_registry, m_input, m_inputMap, deltaTime, m_cursorCaptured);
     }
 
     // Update 3D audio listener from active camera
@@ -511,17 +707,36 @@ void SandboxApp::updateFrame(float deltaTime) {
         AudioEngine::instance().updateListener(camTransform.translation, forward, up);
     }
 
+    if (m_rotateTurntables) {
+        m_carRotationAngle += deltaTime * m_turntableSpeed;
+        if (m_carRotationAngle > glm::two_pi<float>()) {
+            m_carRotationAngle -= glm::two_pi<float>();
+        }
+        const glm::quat carRot = glm::angleAxis(m_carRotationAngle, glm::vec3(0.f, 1.f, 0.f));
+        for (const entt::entity ent : m_car1Entities) {
+            if (m_registry.valid(ent)) {
+                if (auto* t = m_registry.try_get<TransformLocal>(ent)) {
+                    t->rotation = carRot;
+                }
+            }
+        }
+        for (const entt::entity ent : m_car2Entities) {
+            if (m_registry.valid(ent)) {
+                if (auto* t = m_registry.try_get<TransformLocal>(ent)) {
+                    t->rotation = carRot;
+                }
+            }
+        }
+    }
+
     if (!keyboardCaptured) {
         if (m_inputMap.actionPressed(m_input, Action::SpawnBox) ||
             (m_cameraMode == CameraMode::FreeFly && m_input.keyPressed(GLFW_KEY_SPACE))) {
             spawnDynamicObject(m_cubeComp, {0.5f, 0.5f, 0.5f});
         }
-        if (m_hasTeapot && m_inputMap.actionPressed(m_input, Action::SpawnTeapot)) {
-            spawnDynamicConvexObject(m_teapotComp, m_teapotVertices);
-        }
     }
 
-    if (!mouseCaptured) {
+    if (m_cursorCaptured || !mouseCaptured) {
         if (m_inputMap.actionPressed(m_input, Action::ShootSphere)) {
             shootSphere();
         }
@@ -556,6 +771,21 @@ void SandboxApp::updateFrame(float deltaTime) {
 
     syncTransformsFromPhysics(m_registry, m_physics);
     updateTransforms(m_registry);
+
+    // Fail-safe boundary check / Killzone (prevents falling off the world)
+    const glm::vec3 charPos = m_character.position();
+    if (charPos.y < -5.0f || std::abs(charPos.x) > 65.0f || std::abs(charPos.z) > 65.0f) {
+        respawnPlayer();
+    }
+    if (m_cameraMode == CameraMode::FreeFly) {
+        auto freeFlyCamView = m_registry.view<TransformLocal, CameraComponent>();
+        for (const auto camEnt : freeFlyCamView) {
+            auto& t = freeFlyCamView.get<TransformLocal>(camEnt);
+            if (t.translation.y < -5.0f || std::abs(t.translation.x) > 90.0f || std::abs(t.translation.z) > 90.0f) {
+                t.translation = m_spawnPoint + glm::vec3(0.0f, m_character.eyeHeight, 0.0f);
+            }
+        }
+    }
     m_renderer.tryReloadShaders();
 
     m_particles.update(deltaTime);
@@ -608,23 +838,24 @@ bool SandboxApp::renderFrame() {
     beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
     vkBeginCommandBuffer(cmd, &beginInfo);
 
-    std::array<VkClearValue, 2> clearValues{};
-    clearValues[0].color = {{0.06f, 0.07f, 0.09f, 1.f}};
-    clearValues[1].depthStencil = {1.f, 0};
-
-    VkRenderPassBeginInfo renderPassInfo{};
-    renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-    renderPassInfo.renderPass = m_vulkan.renderPass();
-    renderPassInfo.framebuffer = m_vulkan.framebuffers()[imageIndex];
-    renderPassInfo.renderArea.extent = m_vulkan.swapchainExtent();
-    renderPassInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
-    renderPassInfo.pClearValues = clearValues.data();
-
     if (m_enableShadows) {
         m_renderer.recordShadowPass(cmd, m_registry, *m_meshes);
     }
 
-    vkCmdBeginRenderPass(cmd, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
+    // 1. 3D Scene HDR Offscreen Render Pass
+    std::array<VkClearValue, 2> hdrClearValues{};
+    hdrClearValues[0].color = {{0.06f, 0.07f, 0.09f, 1.f}};
+    hdrClearValues[1].depthStencil = {1.f, 0};
+
+    VkRenderPassBeginInfo hdrPassInfo{};
+    hdrPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+    hdrPassInfo.renderPass = m_vulkan.hdrRenderPass();
+    hdrPassInfo.framebuffer = m_vulkan.hdrFramebuffer();
+    hdrPassInfo.renderArea.extent = m_vulkan.swapchainExtent();
+    hdrPassInfo.clearValueCount = static_cast<uint32_t>(hdrClearValues.size());
+    hdrPassInfo.pClearValues = hdrClearValues.data();
+
+    vkCmdBeginRenderPass(cmd, &hdrPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 
     const float aspect =
         static_cast<float>(m_vulkan.swapchainExtent().width) /
@@ -637,7 +868,55 @@ bool SandboxApp::renderFrame() {
         m_debugDraw.record(cmd, m_registry, camera);
     }
 
+    vkCmdEndRenderPass(cmd);
+
+    // 2. Multi-pass Bloom Pyramid (Downsampling & Upsampling)
+    m_postProcess.recordBloom(cmd);
+
+    // 3. Swapchain Presentation Pass
+    VkRenderPassBeginInfo renderPassInfo{};
+    renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+    renderPassInfo.renderPass = m_vulkan.renderPass();
+    renderPassInfo.framebuffer = m_vulkan.framebuffers()[imageIndex];
+    renderPassInfo.renderArea.extent = m_vulkan.swapchainExtent();
+    renderPassInfo.clearValueCount = 0;
+    renderPassInfo.pClearValues = nullptr;
+
+    vkCmdBeginRenderPass(cmd, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
+
+    // 4. Tone Mapping & Bloom Composite Quad
+    m_postProcess.recordComposite(cmd);
+
     m_imgui.beginFrame();
+
+    // Tactical Crosshair (CS2 / Apex style) in FPS mode with locked cursor
+    if (m_cameraMode == CameraMode::FirstPerson && m_cursorCaptured) {
+        ImDrawList* drawList = ImGui::GetForegroundDrawList();
+        const ImVec2 center = ImVec2(
+            static_cast<float>(m_vulkan.swapchainExtent().width) * 0.5f,
+            static_cast<float>(m_vulkan.swapchainExtent().height) * 0.5f
+        );
+        const float gap = 4.0f;
+        const float length = 8.0f;
+        const ImU32 crossColor = IM_COL32(0, 255, 140, 230);
+        const ImU32 shadowColor = IM_COL32(0, 0, 0, 180);
+
+        // Center dot
+        drawList->AddCircleFilled(center, 1.5f, crossColor);
+
+        // Shadow outline lines
+        drawList->AddLine(ImVec2(center.x, center.y - gap - length), ImVec2(center.x, center.y - gap), shadowColor, 2.5f);
+        drawList->AddLine(ImVec2(center.x, center.y + gap), ImVec2(center.x, center.y + gap + length), shadowColor, 2.5f);
+        drawList->AddLine(ImVec2(center.x - gap - length, center.y), ImVec2(center.x - gap, center.y), shadowColor, 2.5f);
+        drawList->AddLine(ImVec2(center.x + gap, center.y), ImVec2(center.x + gap + length, center.y), shadowColor, 2.5f);
+
+        // Crisp inner lines
+        drawList->AddLine(ImVec2(center.x, center.y - gap - length), ImVec2(center.x, center.y - gap), crossColor, 1.5f);
+        drawList->AddLine(ImVec2(center.x, center.y + gap), ImVec2(center.x, center.y + gap + length), crossColor, 1.5f);
+        drawList->AddLine(ImVec2(center.x - gap - length, center.y), ImVec2(center.x - gap, center.y), crossColor, 1.5f);
+        drawList->AddLine(ImVec2(center.x + gap, center.y), ImVec2(center.x + gap + length, center.y), crossColor, 1.5f);
+    }
+
     ImGui::Begin("Sandbox");
     ImGui::Text("FPS: %.1f (avg %.1f)", m_time.fps(), m_time.smoothedFps());
     ImGui::Text("Frame: %llu  dt: %.2f ms", static_cast<unsigned long long>(m_time.frameIndex()),
@@ -653,30 +932,43 @@ bool SandboxApp::renderFrame() {
     ImGui::Text("Dynamic Bodies: %zu", dynamicBodiesCount);
 
     ImGui::Separator();
-    ImGui::Text("Camera Mode (F1):");
+    ImGui::Text("Camera & Mouse Controls:");
     int currentMode = (m_cameraMode == CameraMode::FreeFly) ? 0 : 1;
-    if (ImGui::RadioButton("Free-Fly", &currentMode, 0)) {
+    if (ImGui::RadioButton("Free-Fly (F1)", &currentMode, 0)) {
         if (m_cameraMode != CameraMode::FreeFly) toggleCameraMode();
     }
     ImGui::SameLine();
-    if (ImGui::RadioButton("FPS Character", &currentMode, 1)) {
+    if (ImGui::RadioButton("FPS Mode (F1)", &currentMode, 1)) {
         if (m_cameraMode != CameraMode::FirstPerson) toggleCameraMode();
     }
+
+    if (ImGui::Button(m_cursorCaptured ? "Release Mouse (ESC)" : "Capture Mouse (ESC / Click Viewport)")) {
+        setCursorCapture(!m_cursorCaptured);
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Respawn at Origin")) {
+        respawnPlayer();
+    }
+
+    ImGui::SliderFloat("Mouse Sensitivity", &m_mouseSensitivity, 0.0005f, 0.01f, "%.4f");
+
     if (m_cameraMode == CameraMode::FirstPerson) {
-        ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.4f, 1.0f), "WASD = Move, Space = Jump, RMB = Look");
+        ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.4f, 1.0f), "WASD: Move | Shift: Sprint | Space: Jump | Mouse: Aim | LMB: Shoot");
         ImGui::Text("Grounded: %s", m_character.isGrounded() ? "YES" : "NO");
         const glm::vec3 p = m_character.position();
         ImGui::Text("Pos: (%.2f, %.2f, %.2f)", p.x, p.y, p.z);
     }
 
     ImGui::Separator();
+    ImGui::Text("Showroom Turntables:");
+    ImGui::Checkbox("Rotate Cars", &m_rotateTurntables);
+    ImGui::SameLine();
+    ImGui::SliderFloat("Speed", &m_turntableSpeed, 0.05f, 2.0f, "%.2f rad/s");
+
+    ImGui::Separator();
     ImGui::Text("Physics Actions:");
     if (ImGui::Button("Spawn Cube (B / Space)")) {
         spawnDynamicObject(m_cubeComp, {0.5f, 0.5f, 0.5f});
-    }
-    ImGui::SameLine();
-    if (m_hasTeapot && ImGui::Button("Spawn Teapot (T)")) {
-        spawnDynamicConvexObject(m_teapotComp, m_teapotVertices);
     }
     ImGui::SameLine();
     if (ImGui::Button("Shoot Cannonball (LMB / F)")) {
@@ -722,6 +1014,7 @@ bool SandboxApp::renderFrame() {
             ImGui::ColorEdit3("Tint", &meshComp->tint.x);
             ImGui::SliderFloat("Metallic", &meshComp->metallic, 0.0f, 1.0f);
             ImGui::SliderFloat("Roughness", &meshComp->roughness, 0.0f, 1.0f);
+            ImGui::SliderFloat("Emissive Intensity", &meshComp->emissiveIntensity, 0.0f, 30.0f, "%.1f");
         }
 
         if (auto* lightComp = m_registry.try_get<PointLightComponent>(m_selectedEntity)) {
@@ -793,6 +1086,7 @@ bool SandboxApp::renderFrame() {
             markerComp.tint = {1.0f, 0.9f, 0.7f};
             markerComp.metallic = 0.1f;
             markerComp.roughness = 0.2f;
+            markerComp.emissiveIntensity = 8.0f;
             m_registry.emplace<MeshComponent>(newLight, markerComp);
             m_registry.emplace<MeshGeometryComponent>(newLight, MeshGeometryComponent{MeshGeometryType::Sphere, "", {0.4f, 0.f, 0.f}});
             m_registry.emplace<RenderableTag>(newLight);
@@ -804,6 +1098,20 @@ bool SandboxApp::renderFrame() {
     if (ImGui::Checkbox("Cull backfaces", &cullBackfaces)) {
         m_renderer.setCullMode(cullBackfaces ? VK_CULL_MODE_BACK_BIT : VK_CULL_MODE_NONE);
     }
+
+    ImGui::Separator();
+    ImGui::Text("Cinematic Post-Processing (HDR & Bloom):");
+    auto& pp = m_postProcess.settings();
+    ImGui::Checkbox("Enable Bloom", &pp.bloomEnabled);
+    if (pp.bloomEnabled) {
+        ImGui::SliderFloat("Bloom Intensity", &pp.bloomIntensity, 0.0f, 3.0f, "%.2f");
+        ImGui::SliderFloat("Bloom Threshold", &pp.bloomThreshold, 0.1f, 5.0f, "%.2f");
+        ImGui::SliderFloat("Bloom Knee (Softness)", &pp.bloomKnee, 0.01f, 2.0f, "%.2f");
+        ImGui::SliderFloat("Filter Radius", &pp.filterRadius, 0.1f, 3.0f, "%.2f");
+    }
+    ImGui::SliderFloat("Exposure", &pp.exposure, 0.1f, 5.0f, "%.2f");
+    const char* toneMappers[] = {"ACES Filmic", "Khronos PBR Neutral", "Reinhard", "Linear (Unclamped)"};
+    ImGui::Combo("Tone Mapper", &pp.toneMapper, toneMappers, IM_ARRAYSIZE(toneMappers));
 
     ImGui::Separator();
     ImGui::Text("Particle VFX System:");
@@ -855,7 +1163,7 @@ bool SandboxApp::renderFrame() {
     if (presentResult == VK_ERROR_OUT_OF_DATE_KHR || presentResult == VK_SUBOPTIMAL_KHR) {
         const auto size = m_platform.framebufferSize();
         if (size.x > 0 && size.y > 0) {
-            m_vulkan.handleResize(WindowResizeEvent{size.x, size.y});
+            handleResize(WindowResizeEvent{size.x, size.y});
             ImGui_ImplVulkan_SetMinImageCount(
                 static_cast<uint32_t>(std::max(2, static_cast<int>(m_vulkan.framebuffers().size()))));
         }
@@ -909,11 +1217,7 @@ void SandboxApp::loadScene(const std::string& filename) {
             createDynamicSphere(m_physics, m_registry, entity, radius, mass);
         }
     };
-    resCtx.createConvexHullCollider = [this](entt::entity entity, float mass) {
-        if (!m_teapotVertices.empty()) {
-            m_registry.emplace<RigidBodyComponent>(entity);
-            createDynamicConvexHull(m_physics, m_registry, entity, m_teapotVertices, mass);
-        }
+    resCtx.createConvexHullCollider = [](entt::entity /*entity*/, float /*mass*/) {
     };
     resCtx.destroyPhysicsBody = [this](entt::entity entity) {
         destroyPhysicsBody(m_physics, m_registry, entity);
@@ -921,7 +1225,7 @@ void SandboxApp::loadScene(const std::string& filename) {
     resCtx.clearPhysicsBodies = [this]() {
         destroyPhysicsBodies(m_registry, m_physics);
     };
-    resCtx.teapotMeshData = &m_teapotCpuData;
+    resCtx.teapotMeshData = nullptr;
 
     if (SceneSerializer::deserialize(scenePath, m_registry, m_sunDirection, resCtx)) {
         m_renderer.setLightDir(m_sunDirection);
@@ -960,6 +1264,7 @@ void SandboxApp::shutdownEngine() {
         m_textures->shutdown();
     }
     m_renderer.shutdown();
+    m_postProcess.shutdown();
     if (m_meshes) {
         m_meshes->clear();
     }
@@ -970,13 +1275,21 @@ void SandboxApp::shutdownEngine() {
     m_platform.shutdown();
 }
 
-int SandboxApp::run() {
+int SandboxApp::run(int argc, char** argv) {
+    bool smokeTest = false;
+    for (int i = 0; i < argc; ++i) {
+        if (std::string(argv[i]) == "--smoke-test") {
+            smokeTest = true;
+        }
+    }
+
     loadConfig();
     setupInput();
     if (!initEngine()) {
         return 1;
     }
 
+    int frameCount = 0;
     while (!m_platform.shouldClose()) {
         m_input.beginFrame();
         m_platform.pollEvents();
@@ -986,6 +1299,11 @@ int SandboxApp::run() {
             break;
         }
         m_input.endFrame();
+
+        if (smokeTest && ++frameCount >= 100) {
+            log(LogLevel::Info, "Smoke test completed 100 frames successfully.");
+            break;
+        }
     }
 
     shutdownEngine();

@@ -35,20 +35,6 @@ vec3 srgbToLinear(vec3 color) {
     return mix(color / 12.92, pow((color + 0.055) / 1.055, vec3(2.4)), step(0.04045, color));
 }
 
-vec3 linearToSrgb(vec3 color) {
-    color = max(color, vec3(0.0));
-    return mix(color * 12.92, pow(color, vec3(1.0 / 2.4)) * 1.055 - 0.055, step(0.0031308, color));
-}
-
-vec3 acesTonemap(vec3 color) {
-    const float a = 2.51;
-    const float b = 0.03;
-    const float c = 2.43;
-    const float d = 0.59;
-    const float e = 0.14;
-    return clamp((color * (a * color + b)) / (color * (c * color + d) + e), 0.0, 1.0);
-}
-
 float calculateShadow(vec3 projCoords, float bias) {
     if (projCoords.z > 1.0 || projCoords.x < 0.0 || projCoords.x > 1.0 || projCoords.y < 0.0 || projCoords.y > 1.0) {
         return 1.0;
@@ -138,7 +124,7 @@ void main() {
         pointLighting += (diffL + specL) * radiance * ndlL;
     }
 
-    vec3 color = ambient + sunDiffuse + sunSpecular + pointLighting;
-    color = acesTonemap(color * 1.05);
-    outColor = vec4(linearToSrgb(color), 1.0);
+    vec3 emissive = baseColor * pc.material.w;
+    vec3 color = ambient + sunDiffuse + sunSpecular + pointLighting + emissive;
+    outColor = vec4(color, 1.0);
 }

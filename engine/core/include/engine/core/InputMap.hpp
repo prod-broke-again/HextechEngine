@@ -13,6 +13,7 @@ enum class Action {
     MoveBack,
     MoveLeft,
     MoveRight,
+    Sprint,
     Look,
     SpawnBox,
     SpawnTeapot,
@@ -20,6 +21,7 @@ enum class Action {
     KickObject,
     Jump,
     ToggleCameraMode,
+    ToggleCursor,
     InspectObject,
 };
 

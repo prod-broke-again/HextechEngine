@@ -191,7 +191,7 @@ bool DebugDraw::createPipeline() {
     pipelineInfo.pColorBlendState = &blend;
     pipelineInfo.pDynamicState = &dynamicState;
     pipelineInfo.layout = m_layout;
-    pipelineInfo.renderPass = m_ctx->renderPass();
+    pipelineInfo.renderPass = m_ctx->hdrRenderPass();
     pipelineInfo.subpass = 0;
 
     return vkCreateGraphicsPipelines(m_ctx->device(), VK_NULL_HANDLE, 1, &pipelineInfo, nullptr,

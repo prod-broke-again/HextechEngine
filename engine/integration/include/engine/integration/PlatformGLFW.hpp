@@ -32,11 +32,15 @@ public:
 
     void setResizeCallback(ResizeCallback cb) { m_resizeCallback = std::move(cb); }
 
+    void setCursorCaptured(bool captured);
+    [[nodiscard]] bool isCursorCaptured() const { return m_cursorCaptured; }
+
 private:
     GLFWwindow* m_window = nullptr;
     Input* m_input = nullptr;
     entt::dispatcher* m_dispatcher = nullptr;
     ResizeCallback m_resizeCallback;
+    bool m_cursorCaptured = false;
 };
 
 } // namespace engine

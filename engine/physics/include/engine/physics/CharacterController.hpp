@@ -28,8 +28,12 @@ public:
     void setPosition(const glm::vec3& pos);
 
     float walkSpeed = 6.0f;
-    float jumpSpeed = 5.5f;
+    float jumpSpeed = 7.0f;
     float eyeHeight = 1.6f;
+    float gravity = 18.0f;
+    float groundAcceleration = 14.0f;
+    float groundFriction = 10.0f;
+    float airAcceleration = 2.5f;
 
 private:
     struct Listener;

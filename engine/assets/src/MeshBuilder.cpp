@@ -110,4 +110,71 @@ MeshCpuData MeshBuilder::sphere(float radius, uint32_t rings, uint32_t sectors,
     return mesh;
 }
 
+MeshCpuData MeshBuilder::cylinder(float radius, float halfHeight, uint32_t segments, const glm::vec3& color) {
+    MeshCpuData mesh;
+    segments = std::max(6u, segments);
+    const float kPi = 3.14159265358979323846f;
+    const float yTop = halfHeight;
+    const float yBot = -halfHeight;
+
+    // 1. Side wall vertices
+    for (uint32_t i = 0; i <= segments; ++i) {
+        const float u = static_cast<float>(i) / static_cast<float>(segments);
+        const float theta = u * 2.f * kPi;
+        const float cosT = std::cos(theta);
+        const float sinT = std::sin(theta);
+        const glm::vec3 normal{cosT, 0.f, sinT};
+
+        mesh.vertices.push_back({{cosT * radius, yTop, sinT * radius}, normal, {u, 1.f}, color});
+        mesh.vertices.push_back({{cosT * radius, yBot, sinT * radius}, normal, {u, 0.f}, color});
+    }
+
+    for (uint32_t i = 0; i < segments; ++i) {
+        const uint32_t topL = i * 2;
+        const uint32_t botL = topL + 1;
+        const uint32_t topR = (i + 1) * 2;
+        const uint32_t botR = topR + 1;
+
+        mesh.indices.push_back(topL);
+        mesh.indices.push_back(botL);
+        mesh.indices.push_back(botR);
+
+        mesh.indices.push_back(topL);
+        mesh.indices.push_back(botR);
+        mesh.indices.push_back(topR);
+    }
+
+    // 2. Top cap
+    const uint32_t topCenterIdx = static_cast<uint32_t>(mesh.vertices.size());
+    mesh.vertices.push_back({{0.f, yTop, 0.f}, {0.f, 1.f, 0.f}, {0.5f, 0.5f}, color});
+    for (uint32_t i = 0; i <= segments; ++i) {
+        const float theta = static_cast<float>(i) / static_cast<float>(segments) * 2.f * kPi;
+        const float cosT = std::cos(theta);
+        const float sinT = std::sin(theta);
+        mesh.vertices.push_back({{cosT * radius, yTop, sinT * radius}, {0.f, 1.f, 0.f}, {cosT * 0.5f + 0.5f, sinT * 0.5f + 0.5f}, color});
+    }
+    for (uint32_t i = 0; i < segments; ++i) {
+        mesh.indices.push_back(topCenterIdx);
+        mesh.indices.push_back(topCenterIdx + 1 + i);
+        mesh.indices.push_back(topCenterIdx + 1 + i + 1);
+    }
+
+    // 3. Bottom cap
+    const uint32_t botCenterIdx = static_cast<uint32_t>(mesh.vertices.size());
+    mesh.vertices.push_back({{0.f, yBot, 0.f}, {0.f, -1.f, 0.f}, {0.5f, 0.5f}, color});
+    for (uint32_t i = 0; i <= segments; ++i) {
+        const float theta = static_cast<float>(i) / static_cast<float>(segments) * 2.f * kPi;
+        const float cosT = std::cos(theta);
+        const float sinT = std::sin(theta);
+        mesh.vertices.push_back({{cosT * radius, yBot, sinT * radius}, {0.f, -1.f, 0.f}, {cosT * 0.5f + 0.5f, sinT * 0.5f + 0.5f}, color});
+    }
+    for (uint32_t i = 0; i < segments; ++i) {
+        mesh.indices.push_back(botCenterIdx);
+        mesh.indices.push_back(botCenterIdx + 1 + i + 1);
+        mesh.indices.push_back(botCenterIdx + 1 + i);
+    }
+
+    return mesh;
+}
+
 } // namespace engine

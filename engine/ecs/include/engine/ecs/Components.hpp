@@ -61,6 +61,7 @@ struct MeshComponent {
     glm::vec4 baseColorFactor{1.f};
     float metallic{0.f};
     float roughness{0.5f};
+    float emissiveIntensity{0.f};
 };
 
 struct RenderableTag {};

@@ -27,10 +27,7 @@ bool InputMap::actionPressed(const Input& input, Action action) const {
 }
 
 void InputMap::beginFrame(const Input& input) {
-    m_lookDelta = glm::vec2(0.f);
-    if (actionDown(input, Action::Look)) {
-        m_lookDelta = input.snapshot().mouseDelta;
-    }
+    m_lookDelta = input.snapshot().mouseDelta;
 }
 
 } // namespace engine

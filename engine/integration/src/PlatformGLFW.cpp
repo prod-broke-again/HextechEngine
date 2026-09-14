@@ -111,4 +111,18 @@ glm::ivec2 PlatformGLFW::framebufferSize() const {
     return {w, h};
 }
 
+void PlatformGLFW::setCursorCaptured(bool captured) {
+    if (!m_window) {
+        return;
+    }
+    m_cursorCaptured = captured;
+    glfwSetInputMode(m_window, GLFW_CURSOR, captured ? GLFW_CURSOR_DISABLED : GLFW_CURSOR_NORMAL);
+    if (glfwRawMouseMotionSupported()) {
+        glfwSetInputMode(m_window, GLFW_RAW_MOUSE_MOTION, captured ? GLFW_TRUE : GLFW_FALSE);
+    }
+    if (m_input) {
+        m_input->resetMouseDelta();
+    }
+}
+
 } // namespace engine

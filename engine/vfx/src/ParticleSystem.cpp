@@ -241,16 +241,16 @@ struct ParticleSystem::Impl {
         depthStencil.depthWriteEnable = VK_FALSE;
         depthStencil.depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
 
-        // Alpha Blending
+        // Additive Blending with alpha fade for radiant HDR sparks
         VkPipelineColorBlendAttachmentState blendAttachment{};
         blendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
                                          VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
         blendAttachment.blendEnable = VK_TRUE;
         blendAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
-        blendAttachment.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+        blendAttachment.dstColorBlendFactor = VK_BLEND_FACTOR_ONE;
         blendAttachment.colorBlendOp = VK_BLEND_OP_ADD;
         blendAttachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
-        blendAttachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+        blendAttachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
         blendAttachment.alphaBlendOp = VK_BLEND_OP_ADD;
 
         VkPipelineColorBlendStateCreateInfo blendState{};
@@ -277,7 +277,7 @@ struct ParticleSystem::Impl {
         pipelineInfo.pColorBlendState = &blendState;
         pipelineInfo.pDynamicState = &dynamicState;
         pipelineInfo.layout = pipelineLayout;
-        pipelineInfo.renderPass = ctx->renderPass();
+        pipelineInfo.renderPass = ctx->hdrRenderPass();
         pipelineInfo.subpass = 0;
 
         if (vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &pipeline) != VK_SUCCESS) {
@@ -462,8 +462,8 @@ void ParticleSystem::spawnMuzzleFlash(const glm::vec3& position, const glm::vec3
         const glm::vec3 vel = (glm::normalize(forward + randOffset)) * m_impl->randomFloat(14.f, 26.f);
         const float size = m_impl->randomFloat(0.06f, 0.14f);
         const float life = m_impl->randomFloat(0.12f, 0.30f);
-        const glm::vec4 startCol{1.0f, m_impl->randomFloat(0.7f, 1.0f), 0.2f, 1.0f};
-        const glm::vec4 endCol{1.0f, 0.2f, 0.05f, 0.0f};
+        const glm::vec4 startCol{6.0f, m_impl->randomFloat(3.5f, 5.5f), 1.0f, 1.0f};
+        const glm::vec4 endCol{2.0f, 0.4f, 0.1f, 0.0f};
         m_impl->spawn(position + forward * 0.2f, vel, startCol, endCol, size, 0.01f, life, -4.f, 0.94f);
     }
 
@@ -492,8 +492,8 @@ void ParticleSystem::spawnImpactSparks(const glm::vec3& position, const glm::vec
         const float speed = m_impl->randomFloat(3.0f, 12.0f) * std::clamp(intensity, 0.5f, 2.0f);
         const float size = m_impl->randomFloat(0.04f, 0.10f);
         const float life = m_impl->randomFloat(0.25f, 0.65f);
-        const glm::vec4 startCol{1.0f, m_impl->randomFloat(0.65f, 0.95f), 0.15f, 1.0f};
-        const glm::vec4 endCol{0.9f, 0.15f, 0.05f, 0.0f};
+        const glm::vec4 startCol{5.0f, m_impl->randomFloat(2.8f, 4.2f), 0.8f, 1.0f};
+        const glm::vec4 endCol{1.5f, 0.3f, 0.08f, 0.0f};
         m_impl->spawn(position + normal * 0.05f, randDir * speed, startCol, endCol, size, 0.01f, life, -12.f, 0.96f);
     }
 

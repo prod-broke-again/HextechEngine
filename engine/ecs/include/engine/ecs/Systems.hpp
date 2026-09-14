@@ -12,7 +12,7 @@ class InputMap;
 
 void updateTransforms(entt::registry& registry);
 void updateFreeFlyCamera(entt::registry& registry, const Input& input, const InputMap& inputMap,
-                         float deltaTime);
+                         float deltaTime, bool allowLook = true);
 [[nodiscard]] CameraState findActiveCamera(const entt::registry& registry, float aspect);
 
 } // namespace engine

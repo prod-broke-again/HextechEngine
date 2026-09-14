@@ -12,6 +12,10 @@ set(SPV_DEBUG_VERT "${SPV_OUT_DIR}/debug.vert.spv")
 set(SPV_DEBUG_FRAG "${SPV_OUT_DIR}/debug.frag.spv")
 set(SPV_FULLSCREEN_VERT "${SPV_OUT_DIR}/fullscreen.vert.spv")
 set(SPV_EQUIRECT_FRAG "${SPV_OUT_DIR}/equirect_to_cube.frag.spv")
+set(SPV_POSTPROCESS_VERT "${SPV_OUT_DIR}/postprocess.vert.spv")
+set(SPV_BLOOM_DOWNSAMPLE_FRAG "${SPV_OUT_DIR}/bloom_downsample.frag.spv")
+set(SPV_BLOOM_UPSAMPLE_FRAG "${SPV_OUT_DIR}/bloom_upsample.frag.spv")
+set(SPV_POSTPROCESS_COMPOSITE_FRAG "${SPV_OUT_DIR}/postprocess_composite.frag.spv")
 
 if(GLSLC)
     file(MAKE_DIRECTORY "${SPV_OUT_DIR}")
@@ -83,6 +87,30 @@ if(GLSLC)
         DEPENDS ${SHADER_DIR}/particle.frag
         COMMENT "Compile particle.frag"
     )
+    add_custom_command(
+        OUTPUT ${SPV_POSTPROCESS_VERT}
+        COMMAND ${GLSLC} -fshader-stage=vertex -o ${SPV_POSTPROCESS_VERT} ${SHADER_DIR}/postprocess.vert
+        DEPENDS ${SHADER_DIR}/postprocess.vert
+        COMMENT "Compile postprocess.vert"
+    )
+    add_custom_command(
+        OUTPUT ${SPV_BLOOM_DOWNSAMPLE_FRAG}
+        COMMAND ${GLSLC} -fshader-stage=fragment -o ${SPV_BLOOM_DOWNSAMPLE_FRAG} ${SHADER_DIR}/bloom_downsample.frag
+        DEPENDS ${SHADER_DIR}/bloom_downsample.frag
+        COMMENT "Compile bloom_downsample.frag"
+    )
+    add_custom_command(
+        OUTPUT ${SPV_BLOOM_UPSAMPLE_FRAG}
+        COMMAND ${GLSLC} -fshader-stage=fragment -o ${SPV_BLOOM_UPSAMPLE_FRAG} ${SHADER_DIR}/bloom_upsample.frag
+        DEPENDS ${SHADER_DIR}/bloom_upsample.frag
+        COMMENT "Compile bloom_upsample.frag"
+    )
+    add_custom_command(
+        OUTPUT ${SPV_POSTPROCESS_COMPOSITE_FRAG}
+        COMMAND ${GLSLC} -fshader-stage=fragment -o ${SPV_POSTPROCESS_COMPOSITE_FRAG} ${SHADER_DIR}/postprocess_composite.frag
+        DEPENDS ${SHADER_DIR}/postprocess_composite.frag
+        COMMENT "Compile postprocess_composite.frag"
+    )
     set(ENGINE_SHADER_SPIRV
         ${SPV_PBR_VERT} ${SPV_PBR_FRAG}
         ${SPV_SHADOW_VERT}
@@ -90,6 +118,10 @@ if(GLSLC)
         ${SPV_DEBUG_VERT} ${SPV_DEBUG_FRAG}
         ${SPV_FULLSCREEN_VERT} ${SPV_EQUIRECT_FRAG}
         ${SPV_PARTICLE_VERT} ${SPV_PARTICLE_FRAG}
+        ${SPV_POSTPROCESS_VERT}
+        ${SPV_BLOOM_DOWNSAMPLE_FRAG}
+        ${SPV_BLOOM_UPSAMPLE_FRAG}
+        ${SPV_POSTPROCESS_COMPOSITE_FRAG}
     )
 else()
     message(WARNING "glslc not found; shader SPIR-V must be provided manually in ${SPV_OUT_DIR}")
@@ -102,6 +134,7 @@ add_library(engine_vulkan STATIC
     src/GpuMeshCache.cpp
     src/GpuTextureCache.cpp
     src/PbrRenderer.cpp
+    src/PostProcessPipeline.cpp
     src/DebugDraw.cpp
     src/ShaderHotReload.cpp
     ${ENGINE_SHADER_SPIRV}
@@ -145,6 +178,10 @@ target_compile_definitions(engine_vulkan PUBLIC
     SPV_EQUIRECT_FRAG_PATH="${SPV_EQUIRECT_FRAG}"
     SPV_PARTICLE_VERT_PATH="${SPV_PARTICLE_VERT}"
     SPV_PARTICLE_FRAG_PATH="${SPV_PARTICLE_FRAG}"
+    SPV_POSTPROCESS_VERT_PATH="${SPV_POSTPROCESS_VERT}"
+    SPV_BLOOM_DOWNSAMPLE_FRAG_PATH="${SPV_BLOOM_DOWNSAMPLE_FRAG}"
+    SPV_BLOOM_UPSAMPLE_FRAG_PATH="${SPV_BLOOM_UPSAMPLE_FRAG}"
+    SPV_POSTPROCESS_COMPOSITE_FRAG_PATH="${SPV_POSTPROCESS_COMPOSITE_FRAG}"
 )
 
 engine_apply_compiler_options(engine_vulkan)

@@ -788,7 +788,7 @@ bool PbrRenderer::createGraphicsPipeline() {
 
     pipelineInfo.layout = m_pipelineLayout;
 
-    pipelineInfo.renderPass = m_ctx->renderPass();
+    pipelineInfo.renderPass = m_ctx->hdrRenderPass();
 
     pipelineInfo.subpass = 0;
 
@@ -1194,7 +1194,7 @@ bool PbrRenderer::createSkyPipeline() {
     pipelineInfo.pColorBlendState = &blendState;
     pipelineInfo.pDynamicState = &dynamicState;
     pipelineInfo.layout = m_skyPipelineLayout;
-    pipelineInfo.renderPass = m_ctx->renderPass();
+    pipelineInfo.renderPass = m_ctx->hdrRenderPass();
     pipelineInfo.subpass = 0;
 
     return vkCreateGraphicsPipelines(m_ctx->device(), VK_NULL_HANDLE, 1, &pipelineInfo, nullptr,
@@ -1370,7 +1370,7 @@ void PbrRenderer::recordScene(VkCommandBuffer cmd, entt::registry& registry, Gpu
         push.tint = {effectiveTint, meshComp.baseColorFactor.a};
 
         const bool useTexture = meshComp.baseColorTexture != kInvalidGpuTexture;
-        push.material = {meshComp.metallic, meshComp.roughness, useTexture ? 1.f : 0.f, 0.f};
+        push.material = {meshComp.metallic, meshComp.roughness, useTexture ? 1.f : 0.f, meshComp.emissiveIntensity};
 
         VkDescriptorSet descriptorSet = textures.defaultDescriptorSet();
         if (useTexture) {

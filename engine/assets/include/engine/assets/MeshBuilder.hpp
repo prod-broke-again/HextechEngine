@@ -10,6 +10,8 @@ public:
     [[nodiscard]] static MeshCpuData box(const glm::vec3& halfExtents, const glm::vec3& color);
     [[nodiscard]] static MeshCpuData sphere(float radius, uint32_t rings, uint32_t sectors,
                                             const glm::vec3& color);
+    [[nodiscard]] static MeshCpuData cylinder(float radius, float halfHeight, uint32_t segments,
+                                              const glm::vec3& color);
 };
 
 } // namespace engine

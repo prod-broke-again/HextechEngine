@@ -1,6 +1,6 @@
 #include "SandboxApp.hpp"
 
-int main() {
+int main(int argc, char** argv) {
     engine::SandboxApp app;
-    return app.run();
+    return app.run(argc, argv);
 }
