@@ -7,6 +7,10 @@ add_library(era_simulation STATIC
 target_link_libraries(era_simulation PUBLIC
     engine_world
     engine_data
+    engine_economy
+    engine_timer
+    engine_spatial
+    engine_statemachine
     glm::glm
     EnTT::EnTT
 )

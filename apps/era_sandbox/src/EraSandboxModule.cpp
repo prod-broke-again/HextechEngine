@@ -385,10 +385,10 @@ void EraSandboxModule::updateFrame(World& world, float deltaTime) {
 
     m_world->resource<ParticleSystem>().update(deltaTime);
 
-    auto cView = m_world->registry().view<CarrierComponent, CarrierJourneyComponent, TransformLocal>();
+    auto cView = m_world->registry().view<CarrierComponent, CarrierJourneyComponent, engine::statemachine::StateMachineComponent, TransformLocal>();
     glm::vec3 tcPos = CitySystems::getTownCenterPosition(*m_world);
-    for (auto [e, c, j, t] : cView.each()) {
-        if (c.state == CarrierState::IdleAtWarehouse) {
+    for (auto [e, c, j, sm, t] : cView.each()) {
+        if (sm.current == CarrierStates::IdleAtWarehouse) {
             t.translation = j.currentPos;
             const glm::vec3 lookAway = j.currentPos - tcPos;
             if (glm::length(glm::vec2(lookAway.x, lookAway.z)) > 0.001f) {

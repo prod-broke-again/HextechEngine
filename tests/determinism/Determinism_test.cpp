@@ -80,6 +80,6 @@ TEST_CASE("Determinism - 10,000 Ticks Simulation Replay") {
     CHECK(hash1 != hashNoCommands);
 
     // Compare against baseline reference hash
-    constexpr uint64_t kReferenceHash10k = 6858518945063579704ULL;
+    constexpr uint64_t kReferenceHash10k = 15712780444600737175ULL;
     CHECK(hash1 == kReferenceHash10k);
 }

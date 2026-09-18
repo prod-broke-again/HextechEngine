@@ -65,10 +65,11 @@ void drawBuildDock(
                 ImGui::TextUnformatted(def.name.c_str());
                 ImGui::Separator();
                 ImGui::Text("Cost:");
-                for (size_t resIdx = 0; resIdx < kResourceCount; ++resIdx) {
-                    float amount = def.cost.amounts[resIdx];
-                    if (amount > 0.0f) {
-                        ImGui::Text(" - %.0f %s", amount, getResourceName(static_cast<ResourceType>(resIdx)).data());
+                if (def.cost.empty()) {
+                    ImGui::Text(" - Free");
+                } else {
+                    for (const auto& req : def.cost) {
+                        ImGui::Text(" - %.0f %s", req.amount, getResourceName(req.id).data());
                     }
                 }
                 ImGui::Spacing();

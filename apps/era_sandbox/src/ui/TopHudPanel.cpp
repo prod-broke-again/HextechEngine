@@ -32,31 +32,31 @@ void drawTopHud(const engine::World& world, engine::CommandQueue& /*commands*/) 
 
         const float goldRate = state.taxIncomePerMinute;
         ImGui::TextColored(ImVec4(1.0f, 0.9f, 0.4f, 1.0f), "Gold: %.0f  (%.1f / min)", 
-                           state.storage.get(ResourceType::Gold), goldRate);
+                           state.storage.get(ResourceIds::Gold), goldRate);
 
         ImGui::SameLine(); ImGui::Text("  |  "); ImGui::SameLine();
         
-        const float woodRate = state.productionRatesPerMin[static_cast<size_t>(ResourceType::Wood)] - state.consumptionRatesPerMin[static_cast<size_t>(ResourceType::Wood)];
+        const float woodRate = state.getNetRate(ResourceIds::Wood);
         ImGui::TextColored(woodRate >= 0 ? ImVec4(0.6f, 0.8f, 0.4f, 1.0f) : ImVec4(0.9f, 0.4f, 0.4f, 1.0f), 
                            "(%.1f / min)", woodRate);
         ImGui::SameLine();
-        ImGui::Text("Wood: %.1f", state.storage.get(ResourceType::Wood));
+        ImGui::Text("Wood: %.1f", state.storage.get(ResourceIds::Wood));
         
         ImGui::SameLine(); ImGui::Text("  |  "); ImGui::SameLine();
         
-        const float fishRate = state.productionRatesPerMin[static_cast<size_t>(ResourceType::Fish)] - state.consumptionRatesPerMin[static_cast<size_t>(ResourceType::Fish)];
+        const float fishRate = state.getNetRate(ResourceIds::Fish);
         ImGui::TextColored(fishRate >= 0 ? ImVec4(0.6f, 0.8f, 0.4f, 1.0f) : ImVec4(0.9f, 0.4f, 0.4f, 1.0f), 
                            "(%.1f / min)", fishRate);
         ImGui::SameLine();
-        ImGui::Text("Fish: %.1f", state.storage.get(ResourceType::Fish));
+        ImGui::Text("Fish: %.1f", state.storage.get(ResourceIds::Fish));
 
         ImGui::SameLine(); ImGui::Text("  |  "); ImGui::SameLine();
         
-        const float stoneRate = state.productionRatesPerMin[static_cast<size_t>(ResourceType::Stone)] - state.consumptionRatesPerMin[static_cast<size_t>(ResourceType::Stone)];
+        const float stoneRate = state.getNetRate(ResourceIds::Stone);
         ImGui::TextColored(stoneRate >= 0 ? ImVec4(0.6f, 0.8f, 0.4f, 1.0f) : ImVec4(0.9f, 0.4f, 0.4f, 1.0f), 
                            "(%.1f / min)", stoneRate);
         ImGui::SameLine();
-        ImGui::Text("Stone: %.1f", state.storage.get(ResourceType::Stone));
+        ImGui::Text("Stone: %.1f", state.storage.get(ResourceIds::Stone));
 
         ImGui::Spacing();
         ImGui::Separator();

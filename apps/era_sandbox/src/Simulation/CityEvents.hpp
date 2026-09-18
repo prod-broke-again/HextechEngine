@@ -45,7 +45,7 @@ struct BuildingStatusEvent {
     bool active = false; // true = alert raised, false = alert resolved/cleared
     int gridX = 0;
     int gridZ = 0;
-    ResourceType resource = ResourceType::Wood;
+    StringHash resource = ResourceIds::None;
     float currentBuffer = 0.0f;
     float maxBuffer = 5.0f;
 };

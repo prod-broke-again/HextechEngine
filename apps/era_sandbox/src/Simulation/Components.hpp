@@ -2,10 +2,16 @@
 
 #include "Simulation/EraData.hpp"
 #include "Simulation/CityEvents.hpp"
+#include "engine/modules/economy/Inventory.hpp"
+#include "engine/modules/spatial/SpatialGrid2D.hpp"
+#include "engine/modules/statemachine/StateMachine.hpp"
+#include "engine/modules/timer/TickTimer.hpp"
+
 #include <glm/vec2.hpp>
 #include <glm/vec3.hpp>
 #include <entt/entt.hpp>
 #include <array>
+#include <unordered_map>
 
 namespace engine::era {
 
@@ -28,11 +34,11 @@ struct ResidenceComponent {
     float foodSatisfaction = 1.0f;   // 0.0 .. 1.0
     float warmthSatisfaction = 1.0f; // 0.0 .. 1.0
     float overallSatisfaction = 1.0f;
-    float consumptionTimer = 0.0f;
+    engine::timer::TickTimer consumptionTimer{20, true}; // 1 second at 20 TPS
 };
 
 struct ProductionComponent {
-    float progress = 0.0f;
+    engine::timer::TickTimer cycleTimer{80, true}; // Initialized based on cycleSeconds * 20
     float cycleSeconds = 5.0f;
     bool isWorking = true;
     bool isBufferFull = false;
@@ -42,16 +48,15 @@ struct ProductionComponent {
     BuildingAlertKind currentAlert = BuildingAlertKind::None; // Active alert state
 };
 
-enum class CarrierState : uint8_t {
-    IdleAtWarehouse = 0,
-    EnRouteToPickup,
-    ReturningToWarehouse
-};
+namespace CarrierStates {
+    inline constexpr StringHash IdleAtWarehouse = "idle_warehouse"_sh;
+    inline constexpr StringHash EnRouteToPickup = "en_route_pickup"_sh;
+    inline constexpr StringHash ReturningToWarehouse = "returning_warehouse"_sh;
+}
 
 struct CarrierComponent {
-    CarrierState state = CarrierState::IdleAtWarehouse;
     entt::entity targetBuilding = entt::null;
-    ResourceType carriedResource = ResourceType::Wood;
+    StringHash carriedResource = ResourceIds::None;
     float carriedAmount = 0.0f;
     bool hasCargo = false;
 };
@@ -71,7 +76,7 @@ struct CarrierJourneyComponent {
 // ----------------------------------------------------------------------------
 
 struct CityState {
-    ResourceBundle storage{};
+    engine::economy::Inventory storage;
     EraType currentEra = EraType::StoneAge;
 
     int totalPopulation = 0;
@@ -79,8 +84,22 @@ struct CityState {
     float averageSatisfaction = 1.0f;
     float taxIncomePerMinute = 0.0f;
 
-    std::array<float, kResourceCount> productionRatesPerMin{};
-    std::array<float, kResourceCount> consumptionRatesPerMin{};
+    std::unordered_map<StringHash, float> productionRatesPerMin;
+    std::unordered_map<StringHash, float> consumptionRatesPerMin;
+
+    [[nodiscard]] float getProductionRate(StringHash res) const {
+        auto it = productionRatesPerMin.find(res);
+        return (it != productionRatesPerMin.end()) ? it->second : 0.0f;
+    }
+
+    [[nodiscard]] float getConsumptionRate(StringHash res) const {
+        auto it = consumptionRatesPerMin.find(res);
+        return (it != consumptionRatesPerMin.end()) ? it->second : 0.0f;
+    }
+
+    [[nodiscard]] float getNetRate(StringHash res) const {
+        return getProductionRate(res) - getConsumptionRate(res);
+    }
 };
 
 enum class CellType : uint8_t {
@@ -94,18 +113,17 @@ struct CellData {
     entt::entity entity = entt::null;
 };
 
-struct GridIndex {
+struct GridIndex : public engine::spatial::SpatialGrid2D<CellData, 32, 32> {
     static constexpr int kGridSize = 32;
-    std::array<std::array<CellData, kGridSize>, kGridSize> cells{};
 
-    bool isInBounds(int x, int z) const {
-        return (x >= 0 && x < kGridSize && z >= 0 && z < kGridSize);
+    [[nodiscard]] bool isInBounds(int x, int z) const noexcept {
+        return inBounds(x, z);
     }
-    
-    const CellData& getCell(int x, int z) const {
+
+    [[nodiscard]] const CellData& getCell(int x, int z) const noexcept {
         static const CellData kEmpty{};
         if (!isInBounds(x, z)) return kEmpty;
-        return cells[z][x];
+        return at(x, z);
     }
 };
 

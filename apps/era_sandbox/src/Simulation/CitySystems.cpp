@@ -3,6 +3,7 @@
 #include "Simulation/Components.hpp"
 #include "Simulation/CityEvents.hpp"
 #include "engine/foundation/EventBus.hpp"
+#include "engine/modules/statemachine/StateMachine.hpp"
 
 #include <glm/common.hpp>
 #include <glm/geometric.hpp>
@@ -24,11 +25,15 @@ static void syncCarrierPool(World& world) {
         entt::entity e = registry.create();
         
         auto& c = registry.emplace<CarrierComponent>(e);
-        c.state = CarrierState::IdleAtWarehouse;
         c.hasCargo = false;
         c.carriedAmount = 0.0f;
-        c.carriedResource = ResourceType::Wood;
+        c.carriedResource = ResourceIds::None;
         c.targetBuilding = entt::null;
+
+        auto& sm = registry.emplace<engine::statemachine::StateMachineComponent>(e);
+        sm.current = CarrierStates::IdleAtWarehouse;
+        sm.previous = CarrierStates::IdleAtWarehouse;
+        sm.ticksInState = 0;
         
         const glm::vec3 tcPos = getTownCenterPosition(world);
         const float radius = 0.75f;
@@ -98,11 +103,11 @@ void registerSimulationTypes(World& /*world*/) {
         WorldHasher::hashPod(h, r.foodSatisfaction);
         WorldHasher::hashPod(h, r.warmthSatisfaction);
         WorldHasher::hashPod(h, r.overallSatisfaction);
-        WorldHasher::hashPod(h, r.consumptionTimer);
+        WorldHasher::hashPod(h, r.consumptionTimer.elapsed());
     });
 
     WorldHasher::registerComponent<ProductionComponent>("ProductionComponent", [](const ProductionComponent& p, uint64_t& h) {
-        WorldHasher::hashPod(h, p.progress);
+        WorldHasher::hashPod(h, p.cycleTimer.elapsed());
         WorldHasher::hashPod(h, p.cycleSeconds);
         WorldHasher::hashPod(h, p.isWorking);
         WorldHasher::hashPod(h, p.isBufferFull);
@@ -113,9 +118,8 @@ void registerSimulationTypes(World& /*world*/) {
     });
 
     WorldHasher::registerComponent<CarrierComponent>("CarrierComponent", [](const CarrierComponent& c, uint64_t& h) {
-        WorldHasher::hashPod(h, c.state);
         WorldHasher::hashPod(h, static_cast<uint32_t>(entt::to_integral(c.targetBuilding)));
-        WorldHasher::hashPod(h, c.carriedResource);
+        WorldHasher::hashPod(h, c.carriedResource.value());
         WorldHasher::hashPod(h, c.carriedAmount);
         WorldHasher::hashPod(h, c.hasCargo);
     });
@@ -130,20 +134,12 @@ void registerSimulationTypes(World& /*world*/) {
     });
 
     WorldHasher::registerResource<CityState>("CityState", [](const CityState& s, uint64_t& h) {
-        for (float a : s.storage.amounts) {
-            WorldHasher::hashPod(h, a);
-        }
+        s.storage.hash(h);
         WorldHasher::hashPod(h, s.currentEra);
         WorldHasher::hashPod(h, s.totalPopulation);
         WorldHasher::hashPod(h, s.maxPopulation);
         WorldHasher::hashPod(h, s.averageSatisfaction);
         WorldHasher::hashPod(h, s.taxIncomePerMinute);
-        for (float p : s.productionRatesPerMin) {
-            WorldHasher::hashPod(h, p);
-        }
-        for (float c : s.consumptionRatesPerMin) {
-            WorldHasher::hashPod(h, c);
-        }
     });
 
     WorldHasher::registerResource<CarrierPool>("CarrierPool", [](const CarrierPool& p, uint64_t& h) {
@@ -190,16 +186,14 @@ void registerCityTypes(TypeRegistry& types) {
         .field("x", &GridPosition::x)
         .field("z", &GridPosition::z);
 
-    types.registerComponent<ResidenceComponent>("ResidenceComponent", 1)
+    types.registerComponent<ResidenceComponent>("ResidenceComponent", 2)
         .field("currentInhabitants", &ResidenceComponent::currentInhabitants)
         .field("maxInhabitants", &ResidenceComponent::maxInhabitants)
         .field("foodSatisfaction", &ResidenceComponent::foodSatisfaction)
         .field("warmthSatisfaction", &ResidenceComponent::warmthSatisfaction)
-        .field("overallSatisfaction", &ResidenceComponent::overallSatisfaction)
-        .field("consumptionTimer", &ResidenceComponent::consumptionTimer);
+        .field("overallSatisfaction", &ResidenceComponent::overallSatisfaction);
 
-    types.registerComponent<ProductionComponent>("ProductionComponent", 1)
-        .field("progress", &ProductionComponent::progress)
+    types.registerComponent<ProductionComponent>("ProductionComponent", 2)
         .field("cycleSeconds", &ProductionComponent::cycleSeconds)
         .field("isWorking", &ProductionComponent::isWorking)
         .field("isBufferFull", &ProductionComponent::isBufferFull)
@@ -208,8 +202,7 @@ void registerCityTypes(TypeRegistry& types) {
         .field("hasCourierAssigned", &ProductionComponent::hasCourierAssigned)
         .field("currentAlert", &ProductionComponent::currentAlert);
 
-    types.registerComponent<CarrierComponent>("CarrierComponent", 1)
-        .field("state", &CarrierComponent::state)
+    types.registerComponent<CarrierComponent>("CarrierComponent", 2)
         .field("targetBuilding", &CarrierComponent::targetBuilding)
         .field("carriedResource", &CarrierComponent::carriedResource)
         .field("carriedAmount", &CarrierComponent::carriedAmount)
@@ -227,23 +220,23 @@ void registerCityTypes(TypeRegistry& types) {
 void initCity(World& world) {
     registerSimulationTypes(world);
     registerCityTypes(world.types());
-    if(!world.hasResource<CityState>()) {
+    if (!world.hasResource<CityState>()) {
         world.emplaceResource<CityState>();
     }
-    if(!world.hasResource<GridIndex>()) {
+    if (!world.hasResource<GridIndex>()) {
         world.emplaceResource<GridIndex>();
     }
-    if(!world.hasResource<CarrierPool>()) {
+    if (!world.hasResource<CarrierPool>()) {
         world.emplaceResource<CarrierPool>();
     }
 
     auto& state = world.resource<CityState>();
-    state.storage.set(ResourceType::Wood, 28.0f);
-    state.storage.set(ResourceType::Fish, 20.0f);
-    state.storage.set(ResourceType::Stone, 10.0f);
-    state.storage.set(ResourceType::Grain, 0.0f);
-    state.storage.set(ResourceType::Bread, 0.0f);
-    state.storage.set(ResourceType::Gold, 25.0f);
+    state.storage.set(ResourceIds::Wood, 28.0f);
+    state.storage.set(ResourceIds::Fish, 20.0f);
+    state.storage.set(ResourceIds::Stone, 10.0f);
+    state.storage.set(ResourceIds::Grain, 0.0f);
+    state.storage.set(ResourceIds::Bread, 0.0f);
+    state.storage.set(ResourceIds::Gold, 25.0f);
 
     placeBuilding(world, 15, 15, BuildingIds::TownCenter);
     syncCarrierPool(world);
@@ -259,10 +252,9 @@ bool canAfford(const World& world, StringHash type) {
     return state.storage.canAfford(def.cost);
 }
 
-float getNetRatePerMinute(const World& world, ResourceType type) {
+float getNetRatePerMinute(const World& world, StringHash resourceId) {
     auto& state = world.resource<CityState>();
-    const size_t idx = static_cast<size_t>(type);
-    return state.productionRatesPerMin[idx] - state.consumptionRatesPerMin[idx];
+    return state.getNetRate(resourceId);
 }
 
 bool canEvolve(const World& world) {
@@ -314,7 +306,7 @@ bool placeBuilding(World& world, int x, int z, StringHash type) {
     if (!isInBounds(x, z) || type == BuildingIds::None) return false;
 
     auto& grid = world.resource<GridIndex>();
-    if (grid.cells[z][x].type != CellType::Empty) return false;
+    if (grid.at(x, z).type != CellType::Empty) return false;
 
     auto& state = world.resource<CityState>();
     const BuildingDef& def = getBuildingDef(type);
@@ -334,15 +326,18 @@ bool placeBuilding(World& world, int x, int z, StringHash type) {
         auto& res = registry.emplace<ResidenceComponent>(e);
         res.currentInhabitants = std::min(2, def.maxInhabitants > 0 ? def.maxInhabitants : 2);
         res.maxInhabitants = (state.currentEra == EraType::BronzeAge && type == BuildingIds::Residence) ? 8 : def.maxInhabitants;
+        res.consumptionTimer = engine::timer::TickTimer{20, true};
     }
 
     if (def.production.outputPerMinute > 0.0f) {
         auto& prod = registry.emplace<ProductionComponent>(e);
         prod.cycleSeconds = def.production.cycleSeconds;
+        uint32_t ticks = static_cast<uint32_t>(std::max(0.5f, def.production.cycleSeconds) * 20.0f);
+        prod.cycleTimer = engine::timer::TickTimer{ticks, true};
     }
 
-    grid.cells[z][x].type = (type == BuildingIds::Road || def.category == BuildingCategory::Infrastructure) ? CellType::Road : CellType::Building;
-    grid.cells[z][x].entity = e;
+    grid.at(x, z).type = (type == BuildingIds::Road || def.category == BuildingCategory::Infrastructure) ? CellType::Road : CellType::Building;
+    grid.at(x, z).entity = e;
 
     world.events().enqueue<BuildingPlacedEvent>({e, x, z, type});
     
@@ -354,7 +349,7 @@ bool demolishBuilding(World& world, int x, int z) {
     if (!isInBounds(x, z)) return false;
 
     auto& grid = world.resource<GridIndex>();
-    CellData& cell = grid.cells[z][x];
+    CellData& cell = grid.at(x, z);
     if (cell.type == CellType::Empty) return false;
 
     auto& registry = world.registry();
@@ -367,16 +362,16 @@ bool demolishBuilding(World& world, int x, int z) {
     // Refund 50%
     auto& state = world.resource<CityState>();
     const BuildingDef& def = getBuildingDef(b.type);
-    for (size_t i = 0; i < kResourceCount; ++i) {
-        state.storage.amounts[i] += def.cost.amounts[i] * 0.5f;
+    for (const auto& cost : def.cost) {
+        state.storage.add(cost.id, cost.amount * 0.5f);
     }
 
     // Cancel carriers
     const glm::vec3 tcPos = getTownCenterPosition(world);
-    auto carrierView = registry.view<CarrierComponent, CarrierJourneyComponent>();
-    for (auto [ce, c, j] : carrierView.each()) {
-        if (c.targetBuilding == e && c.state == CarrierState::EnRouteToPickup) {
-            c.state = CarrierState::ReturningToWarehouse;
+    auto carrierView = registry.view<CarrierComponent, CarrierJourneyComponent, engine::statemachine::StateMachineComponent>();
+    for (auto [ce, c, j, sm] : carrierView.each()) {
+        if (c.targetBuilding == e && sm.current == CarrierStates::EnRouteToPickup) {
+            sm.transitionTo(CarrierStates::ReturningToWarehouse);
             j.startPos = j.currentPos;
             j.targetPos = tcPos;
             j.progress = 0.0f;
@@ -409,7 +404,6 @@ bool demolishBuilding(World& world, int x, int z) {
 }
 
 void tickProduction(World& world, Tick /*tick*/) {
-    const float dt = Tick::dt;
     world.registry().sort<BuildingComponent>([](entt::entity a, entt::entity b) {
         return entt::to_integral(a) < entt::to_integral(b);
     });
@@ -481,11 +475,8 @@ void tickProduction(World& world, Tick /*tick*/) {
 
         prod.isWorking = true;
         prod.isBufferFull = false;
-        prod.progress += dt;
 
-        if (prod.progress >= cycle) {
-            prod.progress -= cycle;
-
+        if (prod.cycleTimer.tick()) {
             if (def.production.inputPerMinute > 0.0f) {
                 state.storage.add(def.production.inputResource, -inputPerCycle);
             }
@@ -515,33 +506,30 @@ void tickProduction(World& world, Tick /*tick*/) {
 }
 
 void tickConsumption(World& world, Tick /*tick*/) {
-    const float dt = Tick::dt;
     world.registry().sort<ResidenceComponent>([](entt::entity a, entt::entity b) {
         return entt::to_integral(a) < entt::to_integral(b);
     });
-    constexpr float kConsumptionInterval = 2.0f;
+    constexpr float kConsumptionInterval = 1.0f; // 20 ticks = 1 second
     auto& state = world.resource<CityState>();
     auto view = world.registry().view<BuildingComponent, ResidenceComponent>();
 
     for (auto [e, b, res] : view.each()) {
         if (b.type != BuildingIds::Residence) continue;
 
-        res.consumptionTimer += dt;
-        if (res.consumptionTimer >= kConsumptionInterval) {
-            res.consumptionTimer -= kConsumptionInterval;
+        if (res.consumptionTimer.tick()) {
             const float dtFactor = kConsumptionInterval / 60.0f;
 
             const float fishNeeded = 0.20f * dtFactor;
-            if (state.storage.get(ResourceType::Fish) >= fishNeeded) {
-                state.storage.add(ResourceType::Fish, -fishNeeded);
+            if (state.storage.get(ResourceIds::Fish) >= fishNeeded) {
+                state.storage.add(ResourceIds::Fish, -fishNeeded);
                 res.foodSatisfaction = std::min(1.0f, res.foodSatisfaction + 0.10f);
             } else {
                 res.foodSatisfaction = std::max(0.0f, res.foodSatisfaction - 0.15f);
             }
 
             const float woodNeeded = 0.15f * dtFactor;
-            if (state.storage.get(ResourceType::Wood) >= woodNeeded) {
-                state.storage.add(ResourceType::Wood, -woodNeeded);
+            if (state.storage.get(ResourceIds::Wood) >= woodNeeded) {
+                state.storage.add(ResourceIds::Wood, -woodNeeded);
                 res.warmthSatisfaction = std::min(1.0f, res.warmthSatisfaction + 0.10f);
             } else {
                 res.warmthSatisfaction = std::max(0.0f, res.warmthSatisfaction - 0.15f);
@@ -559,7 +547,7 @@ void tickConsumption(World& world, Tick /*tick*/) {
             const float tax = (def.baseTaxIncomePerMinute / 60.0f) * kConsumptionInterval *
                               res.overallSatisfaction *
                               (static_cast<float>(res.currentInhabitants) / static_cast<float>(res.maxInhabitants));
-            state.storage.add(ResourceType::Gold, tax);
+            state.storage.add(ResourceIds::Gold, tax);
         }
     }
 }
@@ -576,11 +564,11 @@ void tickCarriers(World& world, Tick /*tick*/) {
     auto& registry = world.registry();
     
     auto bView = registry.view<BuildingComponent, GridPosition, ProductionComponent>();
-    auto cView = registry.view<CarrierComponent, CarrierJourneyComponent>();
+    auto cView = registry.view<CarrierComponent, CarrierJourneyComponent, engine::statemachine::StateMachineComponent>();
 
     size_t i = 0;
-    for (auto [ce, c, j] : cView.each()) {
-        if (c.state == CarrierState::IdleAtWarehouse) {
+    for (auto [ce, c, j, sm] : cView.each()) {
+        if (sm.current == CarrierStates::IdleAtWarehouse) {
             entt::entity bestCandidate = entt::null;
             float highestFillRatio = -1.0f;
             glm::vec3 bestPos{0.0f};
@@ -603,7 +591,7 @@ void tickCarriers(World& world, Tick /*tick*/) {
                 auto& prod = registry.get<ProductionComponent>(bestCandidate);
                 prod.hasCourierAssigned = true;
                 
-                c.state = CarrierState::EnRouteToPickup;
+                sm.transitionTo(CarrierStates::EnRouteToPickup);
                 c.targetBuilding = bestCandidate;
                 c.hasCargo = false;
                 c.carriedAmount = 0.0f;
@@ -620,9 +608,9 @@ void tickCarriers(World& world, Tick /*tick*/) {
             j.progress += dt / std::max(0.1f, j.tripDuration);
             j.currentPos = glm::mix(j.startPos, j.targetPos, std::min(1.0f, j.progress));
 
-            if (c.state == CarrierState::EnRouteToPickup) {
+            if (sm.current == CarrierStates::EnRouteToPickup) {
                 if (!registry.valid(c.targetBuilding)) {
-                    c.state = CarrierState::ReturningToWarehouse;
+                    sm.transitionTo(CarrierStates::ReturningToWarehouse);
                     c.targetBuilding = entt::null;
                     j.startPos = j.currentPos;
                     j.targetPos = tcPos;
@@ -658,19 +646,19 @@ void tickCarriers(World& world, Tick /*tick*/) {
                     c.carriedAmount = pickupAmount;
                     c.hasCargo = (pickupAmount > 0.0f);
 
-                    c.state = CarrierState::ReturningToWarehouse;
+                    sm.transitionTo(CarrierStates::ReturningToWarehouse);
                     j.startPos = j.currentPos;
                     j.targetPos = tcPos;
                     j.progress = 0.0f;
                     j.tripDuration = computeTripDuration(world, j.startPos, j.targetPos);
                 }
-            } else if (c.state == CarrierState::ReturningToWarehouse) {
+            } else if (sm.current == CarrierStates::ReturningToWarehouse) {
                 if (j.progress >= 1.0f) {
                     if (c.hasCargo && c.carriedAmount > 0.0f) {
                         state.storage.add(c.carriedResource, c.carriedAmount);
                     }
 
-                    c.state = CarrierState::IdleAtWarehouse;
+                    sm.transitionTo(CarrierStates::IdleAtWarehouse);
                     c.targetBuilding = entt::null;
                     c.hasCargo = false;
                     c.carriedAmount = 0.0f;
@@ -690,8 +678,8 @@ void updateAggregateStats(World& world) {
     float sumSat = 0.0f;
     int houseCount = 0;
 
-    state.productionRatesPerMin.fill(0.0f);
-    state.consumptionRatesPerMin.fill(0.0f);
+    state.productionRatesPerMin.clear();
+    state.consumptionRatesPerMin.clear();
     state.taxIncomePerMinute = 0.0f;
 
     auto bView = world.registry().view<BuildingComponent>();
@@ -700,25 +688,25 @@ void updateAggregateStats(World& world) {
         const BuildingDef& def = getBuildingDef(b.type);
 
         if (b.type == BuildingIds::Residence || def.maxInhabitants > 0) {
-            if(auto* res = world.registry().try_get<ResidenceComponent>(e)) {
+            if (auto* res = world.registry().try_get<ResidenceComponent>(e)) {
                 totalPop += res->currentInhabitants;
                 maxPop += res->maxInhabitants;
                 sumSat += res->overallSatisfaction;
                 houseCount++;
 
-                state.consumptionRatesPerMin[static_cast<size_t>(ResourceType::Fish)] += 0.20f;
-                state.consumptionRatesPerMin[static_cast<size_t>(ResourceType::Wood)] += 0.15f;
+                state.consumptionRatesPerMin[ResourceIds::Fish] += 0.20f;
+                state.consumptionRatesPerMin[ResourceIds::Wood] += 0.15f;
                 state.taxIncomePerMinute += def.baseTaxIncomePerMinute * res->overallSatisfaction *
                                             (static_cast<float>(res->currentInhabitants) / static_cast<float>(def.maxInhabitants));
             }
         }
 
         if (def.production.outputPerMinute > 0.0f) {
-            if(auto* prod = world.registry().try_get<ProductionComponent>(e)) {
+            if (auto* prod = world.registry().try_get<ProductionComponent>(e)) {
                 if (prod->isWorking) {
-                    state.productionRatesPerMin[static_cast<size_t>(def.production.outputResource)] += def.production.outputPerMinute;
+                    state.productionRatesPerMin[def.production.outputResource] += def.production.outputPerMinute;
                     if (def.production.inputPerMinute > 0.0f) {
-                        state.consumptionRatesPerMin[static_cast<size_t>(def.production.inputResource)] += def.production.inputPerMinute;
+                        state.consumptionRatesPerMin[def.production.inputResource] += def.production.inputPerMinute;
                     }
                 }
             }

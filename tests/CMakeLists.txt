@@ -20,9 +20,22 @@ add_executable(engine_tests
     determinism/Determinism_test.cpp
     save/SaveModule_test.cpp
     data/DataModule_test.cpp
+    modules/GenericModules_test.cpp
 )
 
-target_link_libraries(engine_tests PRIVATE doctest_lib engine_foundation engine_world engine_runtime engine_save engine_data era_simulation)
+target_link_libraries(engine_tests PRIVATE
+    doctest_lib
+    engine_foundation
+    engine_world
+    engine_runtime
+    engine_save
+    engine_data
+    engine_economy
+    engine_timer
+    engine_spatial
+    engine_statemachine
+    era_simulation
+)
 
 engine_apply_compiler_options(engine_tests)
 

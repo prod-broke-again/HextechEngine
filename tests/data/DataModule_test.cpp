@@ -208,9 +208,10 @@ TEST_CASE("DataDriven - Adding a new building via JSON without C++ code change")
     const BuildingDef& def = getBuildingDef(windmillId);
     CHECK(def.id == windmillId);
     CHECK(def.name == "Grand Windmill");
-    CHECK(def.category == BuildingCategory::Refinement);
-    CHECK(def.cost.get(ResourceType::Wood) == 8.0f);
-    CHECK(def.production.outputResource == ResourceType::Bread);
+    CHECK(def.cost.size() == 1);
+    CHECK(def.cost[0].id == ResourceIds::Wood);
+    CHECK(def.cost[0].amount == 8.0f);
+    CHECK(def.production.outputResource == ResourceIds::Bread);
     CHECK(def.production.outputPerMinute == 4.0f);
 
     // Verify it is in unlocked buildings for Stone Age
@@ -225,7 +226,7 @@ TEST_CASE("DataDriven - Adding a new building via JSON without C++ code change")
     World world;
     CitySystems::initCity(world);
     auto& state = world.resource<CityState>();
-    state.storage.set(ResourceType::Wood, 50.0f);
+    state.storage.set(ResourceIds::Wood, 50.0f);
 
     PlaceBuildingCmd cmd{10, 10, windmillId};
     auto valRes = validate(world, cmd);

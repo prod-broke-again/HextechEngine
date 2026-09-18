@@ -1,6 +1,7 @@
 #pragma once
 
 #include "engine/foundation/StringHash.hpp"
+#include "engine/modules/economy/Inventory.hpp"
 
 #include <glm/vec2.hpp>
 #include <glm/vec3.hpp>
@@ -16,17 +17,21 @@
 
 namespace engine::era {
 
-enum class ResourceType : uint8_t {
-    Wood = 0,
-    Fish,
-    Stone,
-    Grain,
-    Bread,
-    Gold,
-    Count
-};
+namespace ResourceIds {
+    inline constexpr StringHash None = ""_sh;
+    inline constexpr StringHash Wood = "wood"_sh;
+    inline constexpr StringHash Fish = "fish"_sh;
+    inline constexpr StringHash Stone = "stone"_sh;
+    inline constexpr StringHash Grain = "grain"_sh;
+    inline constexpr StringHash Bread = "bread"_sh;
+    inline constexpr StringHash Gold = "gold"_sh;
+}
 
-constexpr size_t kResourceCount = static_cast<size_t>(ResourceType::Count);
+struct ResourceInfo {
+    StringHash id = ResourceIds::None;
+    std::string name;
+    glm::vec3 color{1.0f};
+};
 
 enum class EraType : uint8_t {
     StoneAge = 0,
@@ -56,53 +61,16 @@ enum class BuildingCategory : uint8_t {
     Infrastructure
 };
 
-struct ResourceBundle {
-    std::array<float, kResourceCount> amounts{};
-
-    constexpr ResourceBundle() = default;
-
-    float get(ResourceType type) const {
-        return amounts[static_cast<size_t>(type)];
-    }
-
-    void set(ResourceType type, float val) {
-        amounts[static_cast<size_t>(type)] = val;
-    }
-
-    void add(ResourceType type, float delta) {
-        amounts[static_cast<size_t>(type)] += delta;
-    }
-
-    bool canAfford(const ResourceBundle& cost) const {
-        for (size_t i = 0; i < kResourceCount; ++i) {
-            if (amounts[i] < cost.amounts[i]) {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    bool tryConsume(const ResourceBundle& cost) {
-        if (!canAfford(cost)) {
-            return false;
-        }
-        for (size_t i = 0; i < kResourceCount; ++i) {
-            amounts[i] -= cost.amounts[i];
-        }
-        return true;
-    }
-};
-
 struct NeedDef {
-    ResourceType resource = ResourceType::Fish;
+    StringHash resource = ResourceIds::Fish;
     float consumptionPerMinute = 0.2f; // Per full house
     bool isMandatory = true;
 };
 
 struct ProductionRecipe {
-    ResourceType inputResource = ResourceType::Wood;
+    StringHash inputResource = ResourceIds::None;
     float inputPerMinute = 0.0f;
-    ResourceType outputResource = ResourceType::Wood;
+    StringHash outputResource = ResourceIds::None;
     float outputPerMinute = 0.0f;
     float cycleSeconds = 4.0f;
 };
@@ -113,7 +81,7 @@ struct BuildingDef {
     std::string name = "None";
     BuildingCategory category = BuildingCategory::Infrastructure;
     EraType requiredEra = EraType::StoneAge;
-    ResourceBundle cost{};
+    std::vector<engine::economy::ResourceQuantity> cost{};
     glm::ivec2 footprint{1, 1};
     int maxInhabitants = 0;
     float baseTaxIncomePerMinute = 0.0f;
@@ -130,7 +98,7 @@ struct CarrierDef {
 };
 
 struct EvolutionRequirement {
-    ResourceType resource = ResourceType::Wood;
+    StringHash resource = ResourceIds::Wood;
     float requiredAmount = 0.0f;
 };
 
@@ -144,12 +112,14 @@ struct EraDefinition {
     std::vector<StringHash> unlockedBuildings;
 };
 
-std::string_view getResourceName(ResourceType type);
-glm::vec3 getResourceColor(ResourceType type);
+std::string_view getResourceName(StringHash id);
+glm::vec3 getResourceColor(StringHash id);
+StringHash parseResourceId(std::string_view str);
+const std::vector<ResourceInfo>& getAllResources();
+
 std::string_view getEraName(EraType era);
 std::string_view getCategoryName(BuildingCategory category);
 
-std::optional<ResourceType> parseResourceType(std::string_view str);
 std::optional<EraType> parseEraType(std::string_view str);
 std::optional<BuildingCategory> parseBuildingCategory(std::string_view str);
 

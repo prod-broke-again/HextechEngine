@@ -66,8 +66,8 @@ void drawInspector(
             const auto& cPool = world.resource<CarrierPool>();
             ImGui::Text("Warehouse Fleet: %d / %d busy", cPool.activeCarrierCount, cPool.totalCarrierCount);
             if (ImGui::TreeNodeEx("Active Couriers", ImGuiTreeNodeFlags_DefaultOpen)) {
-                for (auto [e, c] : world.registry().view<CarrierComponent>().each()) {
-                    if (c.state != CarrierState::IdleAtWarehouse) {
+                for (auto [e, c, sm] : world.registry().view<CarrierComponent, engine::statemachine::StateMachineComponent>().each()) {
+                    if (sm.current != CarrierStates::IdleAtWarehouse) {
                         ImGui::BulletText("Courier fetching %s", getResourceName(c.carriedResource).data());
                     }
                 }
@@ -91,7 +91,7 @@ void drawInspector(
                 ImGui::ProgressBar(prod->internalBuffer / prod->maxBuffer, ImVec2(-1.0f, 10.0f), "");
                 if (prod->isWorking) {
                     ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.4f, 1.0f), "[WORKING]");
-                    ImGui::ProgressBar(prod->progress / std::max(0.1f, def.production.cycleSeconds), ImVec2(-1.0f, 8.0f), "Cycle");
+                    ImGui::ProgressBar(prod->cycleTimer.progress(), ImVec2(-1.0f, 8.0f), "Cycle");
                 } else if (prod->isBufferFull) {
                     ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.1f, 1.0f), "[HALTED - STORAGE FULL]");
                 } else {

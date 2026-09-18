@@ -90,6 +90,11 @@ public:
         return m_registry.ctx().emplace<T>(std::forward<Args>(args)...);
     }
 
+    template<class T>
+    bool removeResource() {
+        return m_registry.ctx().erase<T>();
+    }
+
 private:
     entt::registry m_registry;
     EventBus m_events;

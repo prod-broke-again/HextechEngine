@@ -25,7 +25,7 @@ void drawHoverTooltip(
     }
 
     const auto& grid = world.resource<GridIndex>();
-    entt::entity hoveredId = grid.cells[hoverZ][hoverX].entity;
+    entt::entity hoveredId = grid.at(hoverX, hoverZ).entity;
     if (world.registry().valid(hoveredId)) {
         ImGui::BeginTooltip();
         const auto& hb = world.registry().get<BuildingComponent>(hoveredId);

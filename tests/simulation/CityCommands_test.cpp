@@ -59,7 +59,7 @@ TEST_CASE("CityCommands - PlaceBuildingCmd") {
 
     SUBCASE("Failure - cannot afford building") {
         auto& state = world.resource<CityState>();
-        state.storage.amounts.fill(0.0f); // Empty all resources
+        state.storage.clear(); // Empty all resources
 
         PlaceBuildingCmd cmd{5, 5, BuildingIds::Residence};
         auto res = validate(world, cmd);
@@ -120,8 +120,8 @@ TEST_CASE("CityCommands - EvolveEraCmd") {
     SUBCASE("Failure - insufficient population") {
         auto& state = world.resource<CityState>();
         state.totalPopulation = 2; // BronzeAge needs 12
-        state.storage.set(ResourceType::Wood, 100.0f);
-        state.storage.set(ResourceType::Fish, 100.0f);
+        state.storage.set(ResourceIds::Wood, 100.0f);
+        state.storage.set(ResourceIds::Fish, 100.0f);
 
         EvolveEraCmd cmd{};
         auto res = validate(world, cmd);
@@ -133,7 +133,7 @@ TEST_CASE("CityCommands - EvolveEraCmd") {
         auto& state = world.resource<CityState>();
         const auto& eraDef = getEraDefinition(state.currentEra);
         state.totalPopulation = eraDef.requiredPopulation + 5;
-        state.storage.amounts.fill(0.0f); // No resources
+        state.storage.clear(); // No resources
 
         EvolveEraCmd cmd{};
         auto res = validate(world, cmd);

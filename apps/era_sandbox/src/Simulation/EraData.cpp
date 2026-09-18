@@ -8,28 +8,41 @@
 
 namespace engine::era {
 
-std::string_view getResourceName(ResourceType type) {
-    switch (type) {
-        case ResourceType::Wood:  return "Wood";
-        case ResourceType::Fish:  return "Fish";
-        case ResourceType::Stone: return "Stone";
-        case ResourceType::Grain: return "Grain";
-        case ResourceType::Bread: return "Bread";
-        case ResourceType::Gold:  return "Gold";
-        default: return "Unknown";
-    }
+static const std::vector<ResourceInfo> kResourceCatalog = {
+    {ResourceIds::Wood,  "Wood",  {0.70f, 0.45f, 0.20f}},
+    {ResourceIds::Fish,  "Fish",  {0.25f, 0.70f, 0.90f}},
+    {ResourceIds::Stone, "Stone", {0.65f, 0.65f, 0.70f}},
+    {ResourceIds::Grain, "Grain", {0.92f, 0.82f, 0.25f}},
+    {ResourceIds::Bread, "Bread", {0.85f, 0.55f, 0.20f}},
+    {ResourceIds::Gold,  "Gold",  {1.00f, 0.84f, 0.00f}}
+};
+
+const std::vector<ResourceInfo>& getAllResources() {
+    return kResourceCatalog;
 }
 
-glm::vec3 getResourceColor(ResourceType type) {
-    switch (type) {
-        case ResourceType::Wood:  return {0.70f, 0.45f, 0.20f};
-        case ResourceType::Fish:  return {0.25f, 0.70f, 0.90f};
-        case ResourceType::Stone: return {0.65f, 0.65f, 0.70f};
-        case ResourceType::Grain: return {0.92f, 0.82f, 0.25f};
-        case ResourceType::Bread: return {0.85f, 0.55f, 0.20f};
-        case ResourceType::Gold:  return {1.00f, 0.84f, 0.00f};
-        default: return {1.0f, 1.0f, 1.0f};
+std::string_view getResourceName(StringHash id) {
+    for (const auto& res : kResourceCatalog) {
+        if (res.id == id) return res.name;
     }
+    return "Unknown";
+}
+
+glm::vec3 getResourceColor(StringHash id) {
+    for (const auto& res : kResourceCatalog) {
+        if (res.id == id) return res.color;
+    }
+    return {1.0f, 1.0f, 1.0f};
+}
+
+StringHash parseResourceId(std::string_view str) {
+    if (str == "Wood" || str == "wood") return ResourceIds::Wood;
+    if (str == "Fish" || str == "fish") return ResourceIds::Fish;
+    if (str == "Stone" || str == "stone") return ResourceIds::Stone;
+    if (str == "Grain" || str == "grain") return ResourceIds::Grain;
+    if (str == "Bread" || str == "bread") return ResourceIds::Bread;
+    if (str == "Gold" || str == "gold") return ResourceIds::Gold;
+    return StringHash(str);
 }
 
 std::string_view getEraName(EraType era) {
@@ -49,16 +62,6 @@ std::string_view getCategoryName(BuildingCategory category) {
         case BuildingCategory::Infrastructure: return "Infrastructure";
         default: return "Other";
     }
-}
-
-std::optional<ResourceType> parseResourceType(std::string_view str) {
-    if (str == "Wood" || str == "wood") return ResourceType::Wood;
-    if (str == "Fish" || str == "fish") return ResourceType::Fish;
-    if (str == "Stone" || str == "stone") return ResourceType::Stone;
-    if (str == "Grain" || str == "grain") return ResourceType::Grain;
-    if (str == "Bread" || str == "bread") return ResourceType::Bread;
-    if (str == "Gold" || str == "gold") return ResourceType::Gold;
-    return std::nullopt;
 }
 
 std::optional<EraType> parseEraType(std::string_view str) {
@@ -98,8 +101,8 @@ static std::vector<BuildingDef> makeDefaultBuildingRegistry() {
         .maxInhabitants = 0,
         .baseTaxIncomePerMinute = 0.0f,
         .production = {},
-        .primaryColor = {1.0f, 0.45f, 0.1f},
-        .description = "Heart of the settlement. Stores materials and anchors the era.",
+        .primaryColor = {0.85f, 0.75f, 0.45f},
+        .description = "Heart of your settlement. Generates passive income and provides base storage.",
         .mesh = "town_center"
     });
 
@@ -108,19 +111,18 @@ static std::vector<BuildingDef> makeDefaultBuildingRegistry() {
         BuildingDef def{
             .id = BuildingIds::Residence,
             .stringId = "residence",
-            .name = "Settler House",
+            .name = "Residence",
             .category = BuildingCategory::Housing,
             .requiredEra = EraType::StoneAge,
-            .cost = {},
+            .cost = {{ResourceIds::Wood, 4.0f}},
             .footprint = {1, 1},
             .maxInhabitants = 5,
             .baseTaxIncomePerMinute = 1.0f,
             .production = {},
-            .primaryColor = {0.68f, 0.48f, 0.28f},
-            .description = "Shelter for settlers. Consumes fish and firewood; pays taxes.",
+            .primaryColor = {0.35f, 0.65f, 0.35f},
+            .description = "Provides shelter for 5 citizens. Consumes Fish and Wood, pays taxes.",
             .mesh = "residence"
         };
-        def.cost.set(ResourceType::Wood, 4.0f);
         defs.push_back(def);
     }
 
@@ -129,25 +131,24 @@ static std::vector<BuildingDef> makeDefaultBuildingRegistry() {
         BuildingDef def{
             .id = BuildingIds::Lumberjack,
             .stringId = "lumberjack",
-            .name = "Woodcutter",
+            .name = "Lumberjack's Hut",
             .category = BuildingCategory::Gathering,
             .requiredEra = EraType::StoneAge,
-            .cost = {},
+            .cost = {{ResourceIds::Wood, 6.0f}},
             .footprint = {1, 1},
             .maxInhabitants = 0,
             .baseTaxIncomePerMinute = 0.0f,
-            .production = ProductionRecipe{
-                .inputResource = ResourceType::Wood,
+            .production = {
+                .inputResource = ResourceIds::None,
                 .inputPerMinute = 0.0f,
-                .outputResource = ResourceType::Wood,
-                .outputPerMinute = 3.0f,
-                .cycleSeconds = 5.0f
+                .outputResource = ResourceIds::Wood,
+                .outputPerMinute = 4.0f,
+                .cycleSeconds = 4.0f
             },
-            .primaryColor = {0.35f, 0.55f, 0.22f},
-            .description = "Harvests timber from surrounding land. Produces +3.0 Wood/min.",
+            .primaryColor = {0.60f, 0.40f, 0.20f},
+            .description = "Harvests timber from surrounding forests. Produces +4.0 Wood/min.",
             .mesh = "lumberjack"
         };
-        def.cost.set(ResourceType::Wood, 5.0f);
         defs.push_back(def);
     }
 
@@ -156,25 +157,24 @@ static std::vector<BuildingDef> makeDefaultBuildingRegistry() {
         BuildingDef def{
             .id = BuildingIds::Fishery,
             .stringId = "fishery",
-            .name = "Fisherman's Hut",
+            .name = "Fishery",
             .category = BuildingCategory::Gathering,
             .requiredEra = EraType::StoneAge,
-            .cost = {},
+            .cost = {{ResourceIds::Wood, 8.0f}},
             .footprint = {1, 1},
             .maxInhabitants = 0,
             .baseTaxIncomePerMinute = 0.0f,
-            .production = ProductionRecipe{
-                .inputResource = ResourceType::Fish,
+            .production = {
+                .inputResource = ResourceIds::None,
                 .inputPerMinute = 0.0f,
-                .outputResource = ResourceType::Fish,
-                .outputPerMinute = 2.0f,
-                .cycleSeconds = 6.0f
+                .outputResource = ResourceIds::Fish,
+                .outputPerMinute = 3.0f,
+                .cycleSeconds = 4.0f
             },
-            .primaryColor = {0.20f, 0.55f, 0.75f},
-            .description = "Catches fish in coastal traps. Produces +2.0 Fish/min (feeds 10 huts).",
+            .primaryColor = {0.20f, 0.50f, 0.75f},
+            .description = "Catches fish to feed the settlement. Produces +3.0 Fish/min.",
             .mesh = "fishery"
         };
-        def.cost.set(ResourceType::Wood, 6.0f);
         defs.push_back(def);
     }
 
@@ -186,22 +186,21 @@ static std::vector<BuildingDef> makeDefaultBuildingRegistry() {
             .name = "Stone Quarry",
             .category = BuildingCategory::Gathering,
             .requiredEra = EraType::BronzeAge,
-            .cost = {},
+            .cost = {{ResourceIds::Wood, 12.0f}},
             .footprint = {1, 1},
             .maxInhabitants = 0,
             .baseTaxIncomePerMinute = 0.0f,
-            .production = ProductionRecipe{
-                .inputResource = ResourceType::Stone,
+            .production = {
+                .inputResource = ResourceIds::None,
                 .inputPerMinute = 0.0f,
-                .outputResource = ResourceType::Stone,
+                .outputResource = ResourceIds::Stone,
                 .outputPerMinute = 2.0f,
-                .cycleSeconds = 6.0f
+                .cycleSeconds = 5.0f
             },
-            .primaryColor = {0.60f, 0.60f, 0.65f},
-            .description = "Quarries raw stone blocks for construction. Produces +2.0 Stone/min.",
+            .primaryColor = {0.55f, 0.55f, 0.60f},
+            .description = "Excavates stone blocks for advanced construction. Produces +2.0 Stone/min.",
             .mesh = "stone_quarry"
         };
-        def.cost.set(ResourceType::Wood, 12.0f);
         defs.push_back(def);
     }
 
@@ -213,23 +212,21 @@ static std::vector<BuildingDef> makeDefaultBuildingRegistry() {
             .name = "Wheat Farm",
             .category = BuildingCategory::Gathering,
             .requiredEra = EraType::BronzeAge,
-            .cost = {},
+            .cost = {{ResourceIds::Wood, 10.0f}},
             .footprint = {1, 1},
             .maxInhabitants = 0,
             .baseTaxIncomePerMinute = 0.0f,
-            .production = ProductionRecipe{
-                .inputResource = ResourceType::Grain,
+            .production = {
+                .inputResource = ResourceIds::None,
                 .inputPerMinute = 0.0f,
-                .outputResource = ResourceType::Grain,
+                .outputResource = ResourceIds::Grain,
                 .outputPerMinute = 3.0f,
                 .cycleSeconds = 5.0f
             },
-            .primaryColor = {0.88f, 0.78f, 0.20f},
-            .description = "Harvests wheat stalks. Produces +3.0 Grain/min.",
+            .primaryColor = {0.85f, 0.75f, 0.20f},
+            .description = "Cultivates grain crops for bakeries. Produces +3.0 Grain/min.",
             .mesh = "wheat_farm"
         };
-        def.cost.set(ResourceType::Wood, 10.0f);
-        def.cost.set(ResourceType::Stone, 4.0f);
         defs.push_back(def);
     }
 
@@ -241,14 +238,14 @@ static std::vector<BuildingDef> makeDefaultBuildingRegistry() {
             .name = "Bakery",
             .category = BuildingCategory::Refinement,
             .requiredEra = EraType::BronzeAge,
-            .cost = {},
+            .cost = {{ResourceIds::Wood, 14.0f}, {ResourceIds::Stone, 8.0f}},
             .footprint = {1, 1},
             .maxInhabitants = 0,
             .baseTaxIncomePerMinute = 0.0f,
-            .production = ProductionRecipe{
-                .inputResource = ResourceType::Grain,
+            .production = {
+                .inputResource = ResourceIds::Grain,
                 .inputPerMinute = 2.0f,
-                .outputResource = ResourceType::Bread,
+                .outputResource = ResourceIds::Bread,
                 .outputPerMinute = 2.0f,
                 .cycleSeconds = 6.0f
             },
@@ -256,8 +253,6 @@ static std::vector<BuildingDef> makeDefaultBuildingRegistry() {
             .description = "Mills grain and bakes bread. Produces +2.0 Bread/min from Grain.",
             .mesh = "bakery"
         };
-        def.cost.set(ResourceType::Wood, 14.0f);
-        def.cost.set(ResourceType::Stone, 8.0f);
         defs.push_back(def);
     }
 
@@ -269,7 +264,7 @@ static std::vector<BuildingDef> makeDefaultBuildingRegistry() {
             .name = "Trail / Road",
             .category = BuildingCategory::Infrastructure,
             .requiredEra = EraType::StoneAge,
-            .cost = {},
+            .cost = {{ResourceIds::Wood, 1.0f}},
             .footprint = {1, 1},
             .maxInhabitants = 0,
             .baseTaxIncomePerMinute = 0.0f,
@@ -278,7 +273,6 @@ static std::vector<BuildingDef> makeDefaultBuildingRegistry() {
             .description = "Path connecting settlement buildings.",
             .mesh = "road"
         };
-        def.cost.set(ResourceType::Wood, 1.0f);
         defs.push_back(def);
     }
 
@@ -295,8 +289,8 @@ static std::array<EraDefinition, kEraCount> makeDefaultEraDefinitions() {
         def.name = "Stone Age";
         def.requiredPopulation = 12;
         def.evolutionRequirements = {
-            {ResourceType::Wood, 25.0f},
-            {ResourceType::Fish, 20.0f}
+            {ResourceIds::Wood, 25.0f},
+            {ResourceIds::Fish, 20.0f}
         };
         def.carrier = CarrierDef{
             .speed = 2.2f,
@@ -319,8 +313,8 @@ static std::array<EraDefinition, kEraCount> makeDefaultEraDefinitions() {
         def.name = "Bronze Age";
         def.requiredPopulation = 30;
         def.evolutionRequirements = {
-            {ResourceType::Stone, 60.0f},
-            {ResourceType::Bread, 40.0f}
+            {ResourceIds::Stone, 60.0f},
+            {ResourceIds::Bread, 40.0f}
         };
         def.carrier = CarrierDef{
             .speed = 3.4f,
@@ -352,37 +346,27 @@ const BuildingDef& getBuildingDef(StringHash id) {
             return def;
         }
     }
-    static const BuildingDef kNoneDef{
-        .id = BuildingIds::None,
-        .stringId = "none",
-        .name = "None"
-    };
-    return kNoneDef;
+    static const BuildingDef kEmptyDef{};
+    return kEmptyDef;
+}
+
+std::vector<StringHash> getAvailableBuildingsForEra(EraType era) {
+    std::vector<StringHash> available;
+    const size_t eraIdx = static_cast<size_t>(era);
+    if (eraIdx < kEraCount) {
+        return s_eras[eraIdx].unlockedBuildings;
+    }
+    return available;
 }
 
 const std::vector<BuildingDef>& getAllBuildingDefs() {
     return s_buildings;
 }
 
-std::vector<StringHash> getAvailableBuildingsForEra(EraType era) {
-    std::vector<StringHash> list;
-    const uint8_t maxEraVal = static_cast<uint8_t>(era);
-
-    for (const auto& def : s_buildings) {
-        if (def.id == BuildingIds::None || def.id == BuildingIds::TownCenter) {
-            continue;
-        }
-        if (static_cast<uint8_t>(def.requiredEra) <= maxEraVal) {
-            list.push_back(def.id);
-        }
-    }
-    return list;
-}
-
 const EraDefinition& getEraDefinition(EraType era) {
-    const size_t idx = static_cast<size_t>(era);
-    if (idx < s_eras.size()) {
-        return s_eras[idx];
+    const size_t eraIdx = static_cast<size_t>(era);
+    if (eraIdx < kEraCount) {
+        return s_eras[eraIdx];
     }
     return s_eras[0];
 }
@@ -542,40 +526,23 @@ bool reloadEraData() {
 
                 if (item.contains("cost") && item["cost"].is_object()) {
                     for (auto& [resName, val] : item["cost"].items()) {
-                        auto optRes = parseResourceType(resName);
-                        if (!optRes) {
-                            errors.push_back(DataError{
-                                .filename = buildingsPath.string(),
-                                .line = line,
-                                .key = "buildings[" + idStr + "].cost." + resName,
-                                .reason = "Unknown resource in cost: " + resName
-                            });
-                        } else {
-                            def.cost.set(*optRes, val.get<float>());
-                        }
+                        StringHash resId = parseResourceId(resName);
+                        def.cost.push_back(engine::economy::ResourceQuantity{
+                            .id = resId,
+                            .amount = val.get<float>()
+                        });
                     }
                 }
 
                 if (item.contains("production") && item["production"].is_object()) {
                     const auto& p = item["production"];
-                    std::string inResName = p.value("inputResource", "Wood");
-                    std::string outResName = p.value("outputResource", "Wood");
-                    auto optInRes = parseResourceType(inResName);
-                    auto optOutRes = parseResourceType(outResName);
-                    if (!optInRes || !optOutRes) {
-                        errors.push_back(DataError{
-                            .filename = buildingsPath.string(),
-                            .line = line,
-                            .key = "buildings[" + idStr + "].production",
-                            .reason = "Invalid resource type in production recipe"
-                        });
-                    } else {
-                        def.production.inputResource = *optInRes;
-                        def.production.outputResource = *optOutRes;
-                        def.production.inputPerMinute = p.value("inputPerMinute", 0.0f);
-                        def.production.outputPerMinute = p.value("outputPerMinute", 0.0f);
-                        def.production.cycleSeconds = p.value("cycleSeconds", 4.0f);
-                    }
+                    std::string inResName = p.value("inputResource", "wood");
+                    std::string outResName = p.value("outputResource", "wood");
+                    def.production.inputResource = parseResourceId(inResName);
+                    def.production.outputResource = parseResourceId(outResName);
+                    def.production.inputPerMinute = p.value("inputPerMinute", 0.0f);
+                    def.production.outputPerMinute = p.value("outputPerMinute", 0.0f);
+                    def.production.cycleSeconds = p.value("cycleSeconds", 4.0f);
                 }
 
                 loadedBuildings.push_back(std::move(def));
@@ -632,21 +599,11 @@ bool reloadEraData() {
 
                 if (item.contains("evolutionRequirements") && item["evolutionRequirements"].is_array()) {
                     for (const auto& req : item["evolutionRequirements"]) {
-                        std::string resName = req.value("resource", "");
-                        auto optRes = parseResourceType(resName);
-                        if (!optRes) {
-                            errors.push_back(DataError{
-                                .filename = erasPath.string(),
-                                .line = line,
-                                .key = "eras[" + idStr + "].evolutionRequirements." + resName,
-                                .reason = "Unknown resource: " + resName
-                            });
-                        } else {
-                            def.evolutionRequirements.push_back(EvolutionRequirement{
-                                .resource = *optRes,
-                                .requiredAmount = req.value("requiredAmount", 0.0f)
-                            });
-                        }
+                        std::string resName = req.value("resource", "wood");
+                        def.evolutionRequirements.push_back(EvolutionRequirement{
+                            .resource = parseResourceId(resName),
+                            .requiredAmount = req.value("requiredAmount", req.value("amount", 0.0f))
+                        });
                     }
                 }
 

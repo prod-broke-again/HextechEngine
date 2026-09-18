@@ -32,6 +32,6 @@ bool canAfford(const World& world, StringHash type);
 bool canEvolve(const World& world);
 
 glm::vec3 getTownCenterPosition(const World& world);
-float getNetRatePerMinute(const World& world, ResourceType type);
+float getNetRatePerMinute(const World& world, StringHash resourceId);
 
 } // namespace engine::era::CitySystems
