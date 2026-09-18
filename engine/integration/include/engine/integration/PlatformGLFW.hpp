@@ -27,6 +27,7 @@ public:
 
     void pollEvents() const;
     [[nodiscard]] bool shouldClose() const;
+    void setWindowShouldClose(bool close);
     [[nodiscard]] GLFWwindow* window() const { return m_window; }
     [[nodiscard]] glm::ivec2 framebufferSize() const;
 

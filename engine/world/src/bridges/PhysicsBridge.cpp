@@ -1,4 +1,4 @@
-#include "engine/physics/PhysicsBridge.hpp"
+#include "engine/world/bridges/PhysicsBridge.hpp"
 
 #include "engine/core/Log.hpp"
 

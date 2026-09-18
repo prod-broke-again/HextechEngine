@@ -1,7 +1,5 @@
 #pragma once
 
-#include <entt/signal/dispatcher.hpp>
-
 namespace engine {
 
 struct WindowResizeEvent {
@@ -16,9 +14,5 @@ struct WindowCloseEvent {};
 struct AssetLoadedEvent {
     const char* path{};
 };
-
-inline void registerCoreEvents(entt::dispatcher& dispatcher) {
-    (void)dispatcher;
-}
 
 } // namespace engine

@@ -56,18 +56,18 @@ CmdResult validate(const World& world, const DemolishBuildingCmd& cmd) {
     const auto& grid = world.resource<GridIndex>();
     const CellData& cell = grid.cells[cmd.z][cmd.x];
     if (cell.type == CellType::Empty) {
-        return CmdResult::fail(CmdStatus::BuildingNotFound, "No building on tile");
+        return CmdResult::fail(CmdStatus::TargetNotFound, "No building on tile");
     }
 
     const auto& registry = world.registry();
     entt::entity e = cell.entity;
     if (e == entt::null || !registry.valid(e)) {
-        return CmdResult::fail(CmdStatus::BuildingNotFound, "Entity not found or invalid");
+        return CmdResult::fail(CmdStatus::TargetNotFound, "Entity not found or invalid");
     }
 
     const auto& b = registry.get<BuildingComponent>(e);
     if (b.type == BuildingIds::TownCenter) {
-        return CmdResult::fail(CmdStatus::CannotDemolishTownCenter, "Cannot demolish Town Center");
+        return CmdResult::fail(CmdStatus::ProtectedEntity, "Cannot demolish Town Center");
     }
 
     return CmdResult::success();

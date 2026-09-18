@@ -1,5 +1,4 @@
 add_library(engine_core STATIC
-    src/Application.cpp
     src/Log.cpp
     src/Input.cpp
     src/InputMap.cpp
@@ -8,6 +7,8 @@ add_library(engine_core STATIC
     src/Time.cpp
     src/Path.cpp
 )
+
+add_library(engine_platform ALIAS engine_core)
 
 target_compile_definitions(engine_core PUBLIC
     ENGINE_ROOT_DIR="${CMAKE_SOURCE_DIR}"
@@ -21,8 +22,8 @@ target_include_directories(engine_core
 
 target_link_libraries(engine_core
     PUBLIC
+        engine_foundation
         glm::glm
-        EnTT::EnTT
         nlohmann_json::nlohmann_json
 )
 

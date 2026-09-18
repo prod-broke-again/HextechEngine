@@ -102,6 +102,12 @@ void PlatformGLFW::pollEvents() const {
 
 bool PlatformGLFW::shouldClose() const { return m_window && glfwWindowShouldClose(m_window); }
 
+void PlatformGLFW::setWindowShouldClose(bool close) {
+    if (m_window) {
+        glfwSetWindowShouldClose(m_window, close ? GLFW_TRUE : GLFW_FALSE);
+    }
+}
+
 glm::ivec2 PlatformGLFW::framebufferSize() const {
     int w = 0;
     int h = 0;

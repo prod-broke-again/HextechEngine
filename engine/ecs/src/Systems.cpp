@@ -29,7 +29,7 @@ void updateFreeFlyCamera(entt::registry& registry, const Input& input, const Inp
             continue;
         }
 
-        if (allowLook || inputMap.actionDown(input, Action::Look)) {
+        if (allowLook || inputMap.actionDown(input, Actions::Look)) {
             const glm::vec2 delta = inputMap.lookDelta();
             if (delta.x != 0.f || delta.y != 0.f) {
                 controller.yaw += delta.x * controller.lookSensitivity;
@@ -45,16 +45,16 @@ void updateFreeFlyCamera(entt::registry& registry, const Input& input, const Inp
             glm::normalize(glm::cross(forward, glm::vec3(0.f, 1.f, 0.f)));
 
         glm::vec3 velocity{0.f};
-        if (inputMap.actionDown(input, Action::MoveForward)) {
+        if (inputMap.actionDown(input, Actions::MoveForward)) {
             velocity += forward;
         }
-        if (inputMap.actionDown(input, Action::MoveBack)) {
+        if (inputMap.actionDown(input, Actions::MoveBack)) {
             velocity -= forward;
         }
-        if (inputMap.actionDown(input, Action::MoveRight)) {
+        if (inputMap.actionDown(input, Actions::MoveRight)) {
             velocity += right;
         }
-        if (inputMap.actionDown(input, Action::MoveLeft)) {
+        if (inputMap.actionDown(input, Actions::MoveLeft)) {
             velocity -= right;
         }
         if (glm::length(velocity) > 0.f) {

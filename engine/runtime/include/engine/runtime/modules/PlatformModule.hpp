@@ -33,7 +33,11 @@ public:
     void render(World& world, float) override {
         world.resource<Input>().endFrame(); // End previous frame state
         world.resource<Input>().beginFrame(); // Begin new frame
-        world.resource<PlatformGLFW>().pollEvents();
+        auto& platform = world.resource<PlatformGLFW>();
+        platform.pollEvents();
+        if (platform.shouldClose()) {
+            world.events().enqueue(WindowCloseEvent{});
+        }
     }
 };
 

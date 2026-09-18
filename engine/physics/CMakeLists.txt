@@ -1,6 +1,5 @@
 add_library(engine_physics STATIC
     src/JoltWorld.cpp
-    src/PhysicsBridge.cpp
     src/CharacterController.cpp
 )
 
@@ -12,7 +11,6 @@ target_include_directories(engine_physics
 target_link_libraries(engine_physics
     PUBLIC
         engine_core
-        engine_ecs
         Jolt
 )
 

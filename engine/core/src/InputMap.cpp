@@ -2,11 +2,11 @@
 
 namespace engine {
 
-void InputMap::bind(Action action, int key) { m_keys[action] = key; }
+void InputMap::bind(ActionId action, int key) { m_keys[action] = key; }
 
-void InputMap::bindMouse(Action action, int button) { m_buttons[action] = button; }
+void InputMap::bindMouse(ActionId action, int button) { m_buttons[action] = button; }
 
-bool InputMap::actionDown(const Input& input, Action action) const {
+bool InputMap::actionDown(const Input& input, ActionId action) const {
     if (const auto keyIt = m_keys.find(action); keyIt != m_keys.end()) {
         return input.keyDown(keyIt->second);
     }
@@ -16,7 +16,7 @@ bool InputMap::actionDown(const Input& input, Action action) const {
     return false;
 }
 
-bool InputMap::actionPressed(const Input& input, Action action) const {
+bool InputMap::actionPressed(const Input& input, ActionId action) const {
     if (const auto keyIt = m_keys.find(action); keyIt != m_keys.end()) {
         return input.keyPressed(keyIt->second);
     }

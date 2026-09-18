@@ -19,7 +19,6 @@ enum class MeshGeometryType : uint8_t {
     Box,
     Sphere,
     Plane,
-    Teapot,
     Model
 };
 

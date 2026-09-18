@@ -11,8 +11,8 @@ enum class CmdStatus : uint8_t {
     TileOccupied,
     CannotAfford,
     RequirementsNotMet,
-    BuildingNotFound,
-    CannotDemolishTownCenter,
+    TargetNotFound,
+    ProtectedEntity,
     MaxEraReached,
     UnknownCommand,
     Failure

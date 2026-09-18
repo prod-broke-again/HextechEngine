@@ -101,7 +101,7 @@ TEST_CASE("CityCommands - DemolishBuildingCmd") {
         DemolishBuildingCmd cmd{5, 5};
         auto res = validate(world, cmd);
         CHECK_FALSE(res.ok());
-        CHECK(res.status == CmdStatus::BuildingNotFound);
+        CHECK(res.status == CmdStatus::TargetNotFound);
     }
 
     SUBCASE("Failure - cannot demolish TownCenter") {
@@ -109,7 +109,7 @@ TEST_CASE("CityCommands - DemolishBuildingCmd") {
         DemolishBuildingCmd cmd{15, 15};
         auto res = validate(world, cmd);
         CHECK_FALSE(res.ok());
-        CHECK(res.status == CmdStatus::CannotDemolishTownCenter);
+        CHECK(res.status == CmdStatus::ProtectedEntity);
     }
 }
 

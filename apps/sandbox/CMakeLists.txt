@@ -1,9 +1,11 @@
 add_executable(sandbox
     src/main.cpp
-    src/SandboxApp.cpp
+    src/SandboxModule.cpp
 )
 
 target_link_libraries(sandbox PRIVATE
+    engine_runtime
+    engine_world
     engine_core
     engine_integration
     engine_vulkan
@@ -21,6 +23,8 @@ target_link_libraries(sandbox PRIVATE
 
 target_include_directories(sandbox PRIVATE
     ${CMAKE_SOURCE_DIR}/apps/sandbox/src
+    ${CMAKE_SOURCE_DIR}/engine/runtime/include
+    ${CMAKE_SOURCE_DIR}/engine/world/include
     ${CMAKE_SOURCE_DIR}/engine/core/include
     ${CMAKE_SOURCE_DIR}/engine/foundation/include
     ${CMAKE_SOURCE_DIR}/engine/modules/save/include

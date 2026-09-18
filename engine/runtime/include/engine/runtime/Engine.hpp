@@ -16,8 +16,11 @@ public:
 
     template<typename T, typename... Args>
     requires std::derived_from<T, IModule>
-    void use(Args&&... args) {
-        m_modules.addModule(std::make_unique<T>(std::forward<Args>(args)...));
+    T& use(Args&&... args) {
+        auto mod = std::make_unique<T>(std::forward<Args>(args)...);
+        T* ptr = mod.get();
+        m_modules.addModule(std::move(mod));
+        return *ptr;
     }
 
     bool init();
@@ -29,6 +32,10 @@ public:
     const World& world() const { return m_world; }
 
     bool shouldClose() const { return m_shouldClose; }
+
+    void onWindowClose(const struct WindowCloseEvent&) {
+        m_shouldClose = true;
+    }
 
 private:
     void tick();

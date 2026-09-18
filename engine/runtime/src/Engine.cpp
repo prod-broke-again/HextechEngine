@@ -1,5 +1,6 @@
 #include "engine/runtime/Engine.hpp"
 #include "engine/core/Time.hpp"
+#include "engine/core/Events.hpp"
 
 #include <iostream>
 
@@ -9,15 +10,12 @@ Engine::Engine() = default;
 Engine::~Engine() = default;
 
 bool Engine::init() {
-    // 1. Register types from all modules
-    // Not strictly needed in ModuleRegistry right now as it happens in onAttach?
-    // Wait, the Architecture says "registerTypes(TypeRegistry&)".
-    // We should probably add that to IModule. Let's do it via onAttach for now or update IModule later.
-    
+    m_world.events().connect<WindowCloseEvent, &Engine::onWindowClose>(this);
     return m_modules.build(m_world);
 }
 
 void Engine::shutdown() {
+    m_world.events().disconnect<WindowCloseEvent>(this);
     m_modules.shutdown(m_world);
 }
 
@@ -83,6 +81,7 @@ void Engine::render(float alpha) {
     for (auto* m : m_modules.sortedModules()) {
         m->render(m_world, alpha);
     }
+    m_world.events().drain<WindowCloseEvent>();
 }
 
 } // namespace engine
