@@ -22,6 +22,7 @@ add_executable(engine_tests
     data/DataModule_test.cpp
     modules/GenericModules_test.cpp
     ui/FieldAccess_test.cpp
+    ui/EditorHistory_test.cpp
 )
 
 target_link_libraries(engine_tests PRIVATE
@@ -37,6 +38,8 @@ target_link_libraries(engine_tests PRIVATE
     engine_statemachine
     engine_ui
     era_simulation
+    glm::glm
+    EnTT::EnTT
 )
 
 engine_apply_compiler_options(engine_tests)

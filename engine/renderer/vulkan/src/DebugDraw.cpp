@@ -198,7 +198,8 @@ bool DebugDraw::createPipeline() {
                                    &m_pipeline) == VK_SUCCESS;
 }
 
-void DebugDraw::record(VkCommandBuffer cmd, entt::registry& registry, const CameraState& camera) {
+void DebugDraw::record(VkCommandBuffer cmd, entt::registry& registry, const CameraState& camera,
+                       entt::entity selected) {
     if (m_pipeline == VK_NULL_HANDLE) {
         return;
     }
@@ -210,6 +211,12 @@ void DebugDraw::record(VkCommandBuffer cmd, entt::registry& registry, const Came
     for (const auto entity : view) {
         const auto& transform = view.get<const TransformLocal>(entity);
         appendAxis(lines, transform.translation, 0.5f);
+    }
+
+    if (selected != entt::null && registry.valid(selected)) {
+        if (const auto* transform = registry.try_get<TransformLocal>(selected)) {
+            appendAxis(lines, transform->translation, 1.5f);
+        }
     }
 
     if (lines.size() < 2) {

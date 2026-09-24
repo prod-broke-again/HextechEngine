@@ -12,6 +12,9 @@
 #include "engine/ecs/Systems.hpp"
 #include "engine/integration/ImGuiLayer.hpp"
 #include "engine/ui/ComponentInspector.hpp"
+#include "engine/ui/EditorChrome.hpp"
+#include "engine/ui/TransformGizmo.hpp"
+#include "engine/modules/save/SaveModule.hpp"
 #include "engine/integration/PlatformGLFW.hpp"
 #include "engine/physics/CharacterController.hpp"
 #include "engine/physics/JoltWorld.hpp"
@@ -57,6 +60,70 @@ entt::entity spawnMeshEntity(entt::registry& registry, uint32_t meshId, const gl
 
 std::string shaderPath(const char* name) {
     return std::string(SHADER_DIR) + "/" + name;
+}
+
+void handleSceneRequests(World& world, engine::ui::EditorHistory& history,
+                         engine::ui::SceneSaveControls& scene, glm::vec3& sun) {
+    if (!scene.saveRequested && !scene.loadRequested) {
+        return;
+    }
+    const std::filesystem::path path = scene.path;
+    if (scene.saveRequested) {
+        if (path.has_parent_path()) {
+            std::filesystem::create_directories(path.parent_path());
+        }
+        if (SaveModule::saveSceneJson(path, world.registry(), world.types(), sun)) {
+            scene.status = "Saved " + path.string();
+        } else {
+            scene.status = "Save failed: " + path.string();
+        }
+    }
+    if (scene.loadRequested) {
+        if (SaveModule::loadSceneJson(path, world.registry(), world.types(), sun)) {
+            history.clear();
+            scene.status = "Loaded " + path.string() + " (physics bodies not rebuilt)";
+        } else {
+            scene.status = "Load failed: " + path.string();
+        }
+    }
+}
+
+void tickEditorGizmo(engine::ui::GizmoState& gizmo, engine::ui::EditorHistory& history,
+                     bool& wasDragging, glm::vec3& startT, glm::quat& startR,
+                     entt::registry& registry, entt::entity selected, const CameraState& camera,
+                     const Input& input, const glm::vec2& viewport, bool allowPick) {
+    if (selected == entt::null || !registry.valid(selected)) {
+        return;
+    }
+    auto* transform = registry.try_get<TransformLocal>(selected);
+    if (!transform) {
+        return;
+    }
+
+    engine::ui::GizmoCamera gizmoCam;
+    gizmoCam.view = camera.view;
+    gizmoCam.proj = camera.proj;
+    gizmoCam.viewProj = camera.viewProj;
+    gizmoCam.position = camera.position;
+    gizmoCam.viewport = viewport;
+
+    engine::ui::GizmoInput gizmoInput;
+    gizmoInput.mouse = input.snapshot().mousePosition;
+    gizmoInput.leftDown = input.mouseButtonDown(0);
+    gizmoInput.leftPressed = allowPick && input.mouseButtonPressed(0);
+    gizmoInput.leftReleased = !input.mouseButtonDown(0);
+
+    if (!gizmo.dragging) {
+        startT = transform->translation;
+        startR = transform->rotation;
+    }
+    engine::ui::manipulateTransform(gizmo, transform->translation, transform->rotation, gizmoCam, gizmoInput);
+    if (wasDragging && !gizmo.dragging) {
+        engine::ui::commitTransformDiff(history, selected, startT, startR, transform->translation,
+                                        transform->rotation);
+    }
+    wasDragging = gizmo.dragging;
+    engine::ui::drawGizmoOverlay(gizmo, transform->translation, gizmoCam);
 }
 
 } // namespace
@@ -121,6 +188,7 @@ void SandboxModule::onAttach(World& world) {
 
     spawnScene(world);
     setCursorCapture(world, true);
+    m_sceneControls.path = "saves/sandbox_scene.json";
 }
 
 void SandboxModule::onDetach(World& world) {
@@ -731,7 +799,7 @@ bool SandboxModule::renderFrame(World& world) {
     renderer.recordScene(cmd, registry, meshes, textures, camera);
     particles.record(cmd, camera);
     if (m_showDebug) {
-        m_debugDraw.record(cmd, registry, camera);
+        m_debugDraw.record(cmd, registry, camera, m_selectedEntity);
     }
 
     vkCmdEndRenderPass(cmd);
@@ -891,7 +959,19 @@ void SandboxModule::renderUi(World& world) {
 
     ImGui::End();
 
-    engine::ui::drawComponentInspector(world.registry(), world.types(), m_selectedEntity);
+    engine::ui::drawEditorToolbar(m_editorHistory, world.registry(), world.types(), m_gizmo, m_sceneControls);
+    handleSceneRequests(world, m_editorHistory, m_sceneControls, m_sunDirection);
+    if (m_sceneControls.saveRequested || m_sceneControls.loadRequested) {
+        world.resource<PbrRenderer>().setLightDir(m_sunDirection);
+    }
+    engine::ui::drawComponentInspector(world.registry(), world.types(), m_selectedEntity, &m_editorHistory);
+
+    const glm::ivec2 fb = world.resource<PlatformGLFW>().framebufferSize();
+    const float aspect = static_cast<float>(std::max(1, fb.x)) / static_cast<float>(std::max(1, fb.y));
+    const bool allowPick = !m_cursorCaptured && !ImGui::GetIO().WantCaptureMouse;
+    tickEditorGizmo(m_gizmo, m_editorHistory, m_gizmoWasDragging, m_gizmoStartTranslation, m_gizmoStartRotation,
+                    registry, m_selectedEntity, findActiveCamera(registry, aspect), world.resource<Input>(),
+                    glm::vec2{static_cast<float>(fb.x), static_cast<float>(fb.y)}, allowPick);
 }
 
 } // namespace engine::sandbox

@@ -16,6 +16,9 @@
 #include "engine/renderer/vulkan/PostProcessPipeline.hpp"
 #include "engine/vfx/ParticleSystem.hpp"
 #include "engine/audio/AudioEngine.hpp"
+#include "engine/ui/EditorHistory.hpp"
+#include "engine/ui/TransformGizmo.hpp"
+#include "engine/ui/EditorChrome.hpp"
 
 #include <map>
 #include <memory>
@@ -25,6 +28,8 @@ namespace engine::era {
 
 class EraSandboxModule : public IModule {
 public:
+    explicit EraSandboxModule(bool smokeTest = false) : m_smokeTest(smokeTest) {}
+
     std::string_view name() const override { return "EraSandboxModule"; }
     std::span<const std::string_view> dependsOn() const override { 
         static constexpr std::string_view deps[] = { "UiModule", "VfxModule", "AudioModule" };
@@ -79,6 +84,16 @@ private:
     float m_time = 0.0f;
     
     World* m_world = nullptr;
+
+    bool m_smokeTest = false;
+    int m_frameCount = 0;
+
+    engine::ui::EditorHistory m_editorHistory;
+    engine::ui::GizmoState m_gizmo;
+    engine::ui::SceneSaveControls m_sceneControls;
+    bool m_gizmoWasDragging = false;
+    glm::vec3 m_gizmoStartTranslation{0.f};
+    glm::quat m_gizmoStartRotation{1.f, 0.f, 0.f, 0.f};
 };
 
 } // namespace engine::era

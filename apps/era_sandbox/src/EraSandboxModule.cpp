@@ -7,7 +7,13 @@
 
 #include "engine/assets/MeshBuilder.hpp"
 #include "engine/ui/ComponentInspector.hpp"
+#include "engine/ui/EditorChrome.hpp"
+#include "engine/ui/TransformGizmo.hpp"
+#include "engine/modules/save/SaveModule.hpp"
+#include "engine/ecs/Components.hpp"
 #include "engine/core/Log.hpp"
+#include "engine/core/Events.hpp"
+#include "engine/core/Input.hpp"
 #include "engine/core/Path.hpp"
 #include "engine/ecs/Systems.hpp"
 
@@ -22,6 +28,74 @@
 #include <filesystem>
 #include <thread>
 #include <vector>
+
+namespace {
+
+void handleSceneRequests(engine::World& world, engine::ui::EditorHistory& history,
+                         engine::ui::SceneSaveControls& scene, glm::vec3& sun) {
+    if (!scene.saveRequested && !scene.loadRequested) {
+        return;
+    }
+    const std::filesystem::path path = scene.path;
+    if (scene.saveRequested) {
+        if (path.has_parent_path()) {
+            std::filesystem::create_directories(path.parent_path());
+        }
+        if (engine::SaveModule::saveSceneJson(path, world.registry(), world.types(), sun)) {
+            scene.status = "Saved " + path.string();
+        } else {
+            scene.status = "Save failed: " + path.string();
+        }
+    }
+    if (scene.loadRequested) {
+        if (engine::SaveModule::loadSceneJson(path, world.registry(), world.types(), sun)) {
+            history.clear();
+            scene.status = "Loaded " + path.string();
+        } else {
+            scene.status = "Load failed: " + path.string();
+        }
+    }
+}
+
+void tickEditorGizmo(engine::ui::GizmoState& gizmo, engine::ui::EditorHistory& history,
+                     bool& wasDragging, glm::vec3& startT, glm::quat& startR,
+                     entt::registry& registry, entt::entity selected, const engine::CameraState& camera,
+                     const engine::Input& input, const glm::vec2& viewport, bool allowPick) {
+    if (selected == entt::null || !registry.valid(selected)) {
+        return;
+    }
+    auto* transform = registry.try_get<engine::TransformLocal>(selected);
+    if (!transform) {
+        return;
+    }
+
+    engine::ui::GizmoCamera gizmoCam;
+    gizmoCam.view = camera.view;
+    gizmoCam.proj = camera.proj;
+    gizmoCam.viewProj = camera.viewProj;
+    gizmoCam.position = camera.position;
+    gizmoCam.viewport = viewport;
+
+    engine::ui::GizmoInput gizmoInput;
+    gizmoInput.mouse = input.snapshot().mousePosition;
+    gizmoInput.leftDown = input.mouseButtonDown(0);
+    gizmoInput.leftPressed = allowPick && input.mouseButtonPressed(0);
+    gizmoInput.leftReleased = !input.mouseButtonDown(0);
+
+    if (!gizmo.dragging) {
+        startT = transform->translation;
+        startR = transform->rotation;
+    }
+    engine::ui::manipulateTransform(gizmo, transform->translation, transform->rotation, gizmoCam, gizmoInput);
+    if (wasDragging && !gizmo.dragging) {
+        engine::ui::commitTransformDiff(history, selected, startT, startR, transform->translation,
+                                        transform->rotation);
+    }
+    wasDragging = gizmo.dragging;
+    engine::ui::drawGizmoOverlay(gizmo, transform->translation, gizmoCam);
+}
+
+} // namespace
 
 namespace engine::era {
 
@@ -110,6 +184,7 @@ MeshCpuData createHoverQuadMesh() {
 } // namespace
 
 void EraSandboxModule::registerTypes(TypeRegistry& registry) {
+    registerEngineComponents(registry);
     CitySystems::registerCityTypes(registry);
 }
 
@@ -119,6 +194,7 @@ void EraSandboxModule::registerCommands(CommandRegistry& registry) {
 
 void EraSandboxModule::onAttach(World& world) {
     m_world = &world;
+    m_sceneControls.path = "saves/era_scene.json";
     m_world->resource<PlatformGLFW>().setCursorCaptured(false);
     
     // Bind events
@@ -154,6 +230,14 @@ void EraSandboxModule::tick(World& world) {
 
 void EraSandboxModule::render(World& world, float /*alpha*/) {
     if (world.resource<PlatformGLFW>().shouldClose()) return;
+    if (m_smokeTest) {
+        if (++m_frameCount >= 100) {
+            log(LogLevel::Info, "Smoke test completed 100 frames successfully.");
+            world.resource<PlatformGLFW>().setWindowShouldClose(true);
+            world.events().enqueue(WindowCloseEvent{});
+            return;
+        }
+    }
     updateFrame(world, 1.0f / 30.0f);
     renderFrame(world);
 }
@@ -566,7 +650,18 @@ bool EraSandboxModule::renderFrame(World& world) {
 
     world.resource<ImGuiLayer>().beginFrame();
     renderUi(world, world.commandQueue());
-    engine::ui::drawComponentInspector(world.registry(), world.types(), m_inspectedBuildingId);
+    engine::ui::drawEditorToolbar(m_editorHistory, world.registry(), world.types(), m_gizmo, m_sceneControls);
+    handleSceneRequests(world, m_editorHistory, m_sceneControls, m_sunDirection);
+    engine::ui::drawComponentInspector(world.registry(), world.types(), m_inspectedBuildingId, &m_editorHistory);
+    {
+        const glm::ivec2 fb = world.resource<PlatformGLFW>().framebufferSize();
+        const bool allowPick = !ImGui::GetIO().WantCaptureMouse;
+        tickEditorGizmo(m_gizmo, m_editorHistory, m_gizmoWasDragging, m_gizmoStartTranslation,
+                        m_gizmoStartRotation, world.registry(), m_inspectedBuildingId, camera,
+                        world.resource<Input>(),
+                        glm::vec2{static_cast<float>(std::max(1, fb.x)), static_cast<float>(std::max(1, fb.y))},
+                        allowPick);
+    }
     world.resource<ImGuiLayer>().endFrame(cmd);
 
     vkCmdEndRenderPass(cmd);

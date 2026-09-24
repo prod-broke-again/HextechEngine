@@ -12,6 +12,9 @@
 #include "engine/ecs/Components.hpp"
 #include "engine/assets/AssetManager.hpp"
 #include "engine/world/bridges/PhysicsBridge.hpp"
+#include "engine/ui/EditorHistory.hpp"
+#include "engine/ui/TransformGizmo.hpp"
+#include "engine/ui/EditorChrome.hpp"
 
 namespace engine::sandbox {
 
@@ -86,6 +89,13 @@ private:
 
     bool m_smokeTest = false;
     int m_frameCount = 0;
+
+    engine::ui::EditorHistory m_editorHistory;
+    engine::ui::GizmoState m_gizmo;
+    engine::ui::SceneSaveControls m_sceneControls;
+    bool m_gizmoWasDragging = false;
+    glm::vec3 m_gizmoStartTranslation{0.f};
+    glm::quat m_gizmoStartRotation{1.f, 0.f, 0.f, 0.f};
 };
 
 } // namespace engine::sandbox

@@ -7,9 +7,15 @@
 #include <cstdint>
 #include <cstring>
 #include <string>
+#include <string_view>
 
 namespace engine::ui {
 namespace {
+
+struct PendingFieldEdit {
+    bool active = false;
+    FieldEdit edit;
+};
 
 void drawLabel(const FieldDesc& field) {
     ImGui::AlignTextToFramePadding();
@@ -82,10 +88,36 @@ void drawStringWidget(void* ptr) {
     }
 }
 
-void drawFieldWidget(void* component, const FieldDesc& field) {
+void trackFieldHistory(EditorHistory* history, PendingFieldEdit& pending, const FieldEdit& beforeSnap,
+                       const FieldDesc& field, void* component) {
+    if (!history) {
+        return;
+    }
+    if (ImGui::IsItemActivated()) {
+        pending.active = true;
+        pending.edit = beforeSnap;
+    }
+    if (pending.active && ImGui::IsItemDeactivatedAfterEdit()) {
+        captureFieldValue(component, field, pending.edit.after, pending.edit.afterString);
+        history->push(pending.edit);
+        pending.active = false;
+    }
+}
+
+void drawFieldWidget(void* component, const FieldDesc& field, EditorHistory* history,
+                     PendingFieldEdit& pending, entt::entity entity, std::string_view componentName) {
     void* ptr = fieldPtr(component, field);
     if (!ptr) {
         return;
+    }
+
+    FieldEdit beforeSnap{};
+    beforeSnap.entity = entity;
+    beforeSnap.componentName.assign(componentName.begin(), componentName.end());
+    beforeSnap.fieldName.assign(field.name.begin(), field.name.end());
+    beforeSnap.type = field.type;
+    if (history) {
+        captureFieldValue(component, field, beforeSnap.before, beforeSnap.beforeString);
     }
 
     ImGui::PushID(field.name.data());
@@ -131,20 +163,24 @@ void drawFieldWidget(void* component, const FieldDesc& field) {
         auto raw = static_cast<uint32_t>(*static_cast<entt::entity*>(ptr));
         ImGui::InputScalar("##v", ImGuiDataType_U32, &raw);
         ImGui::EndDisabled();
-        break;
+        ImGui::PopID();
+        return;
     }
     case FieldType::Enum:
         drawEnumWidget(ptr, field);
         break;
     case FieldType::Unknown:
         ImGui::TextDisabled("(%s)", fieldTypeName(field.type));
-        break;
+        ImGui::PopID();
+        return;
     }
 
+    trackFieldHistory(history, pending, beforeSnap, field, component);
     ImGui::PopID();
 }
 
-void drawRegisteredComponents(entt::registry& registry, const TypeRegistry& types, entt::entity selected) {
+void drawRegisteredComponents(entt::registry& registry, const TypeRegistry& types, entt::entity selected,
+                              EditorHistory* history, PendingFieldEdit& pending) {
     bool any = false;
     for (const ComponentDesc& desc : types.components()) {
         if (!desc.hasComponent || !desc.getComponent) {
@@ -165,7 +201,7 @@ void drawRegisteredComponents(entt::registry& registry, const TypeRegistry& type
                 ImGui::TextDisabled("No registered fields");
             }
             for (const FieldDesc& field : desc.fields) {
-                drawFieldWidget(data, field);
+                drawFieldWidget(data, field, history, pending, selected, desc.name);
             }
             ImGui::TreePop();
         }
@@ -176,12 +212,35 @@ void drawRegisteredComponents(entt::registry& registry, const TypeRegistry& type
     }
 }
 
+void handleHistoryShortcuts(EditorHistory* history, entt::registry& registry, const TypeRegistry& types) {
+    if (!history) {
+        return;
+    }
+    const ImGuiIO& io = ImGui::GetIO();
+    if (!io.KeyCtrl) {
+        return;
+    }
+    if (ImGui::IsKeyPressed(ImGuiKey_Z, false)) {
+        if (io.KeyShift) {
+            history->redo(registry, types);
+        } else {
+            history->undo(registry, types);
+        }
+    }
+    if (ImGui::IsKeyPressed(ImGuiKey_Y, false)) {
+        history->redo(registry, types);
+    }
+}
+
 } // namespace
 
-void drawComponentInspector(entt::registry& registry, const TypeRegistry& types, entt::entity& selected) {
+void drawComponentInspector(entt::registry& registry, const TypeRegistry& types, entt::entity& selected,
+                            EditorHistory* history) {
     if (selected != entt::null && !registry.valid(selected)) {
         selected = entt::null;
     }
+
+    handleHistoryShortcuts(history, registry, types);
 
     if (!ImGui::Begin("Component Inspector")) {
         ImGui::End();
@@ -196,7 +255,9 @@ void drawComponentInspector(entt::registry& registry, const TypeRegistry& types,
 
     ImGui::Text("Entity %u", static_cast<uint32_t>(selected));
     ImGui::Separator();
-    drawRegisteredComponents(registry, types, selected);
+
+    static PendingFieldEdit pending;
+    drawRegisteredComponents(registry, types, selected, history, pending);
     ImGui::End();
 }
 

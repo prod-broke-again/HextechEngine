@@ -1,6 +1,9 @@
 add_library(engine_ui STATIC
     src/FieldAccess.cpp
     src/ComponentInspector.cpp
+    src/EditorHistory.cpp
+    src/TransformGizmo.cpp
+    src/EditorChrome.cpp
 )
 
 target_include_directories(engine_ui PUBLIC include)

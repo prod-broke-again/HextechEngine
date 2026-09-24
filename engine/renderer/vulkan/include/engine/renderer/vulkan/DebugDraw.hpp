@@ -15,7 +15,8 @@ public:
     bool init(VulkanContext& ctx);
     void shutdown();
 
-    void record(VkCommandBuffer cmd, entt::registry& registry, const CameraState& camera);
+    void record(VkCommandBuffer cmd, entt::registry& registry, const CameraState& camera,
+                entt::entity selected = entt::null);
 
 private:
     bool createPipeline();

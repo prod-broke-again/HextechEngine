@@ -21,7 +21,7 @@ int main(int argc, char** argv) {
     engine.use<engine::UiModule>();
     engine.use<engine::VfxModule>();
     engine.use<engine::AudioModule>();
-    engine.use<engine::era::EraSandboxModule>();
+    engine.use<engine::era::EraSandboxModule>(smokeTest);
 
     if (engine.init()) {
         engine.run();
