@@ -6,6 +6,7 @@
 #include "EraSandboxModule.hpp"
 
 #include "engine/assets/MeshBuilder.hpp"
+#include "engine/ui/ComponentInspector.hpp"
 #include "engine/core/Log.hpp"
 #include "engine/core/Path.hpp"
 #include "engine/ecs/Systems.hpp"
@@ -565,6 +566,7 @@ bool EraSandboxModule::renderFrame(World& world) {
 
     world.resource<ImGuiLayer>().beginFrame();
     renderUi(world, world.commandQueue());
+    engine::ui::drawComponentInspector(world.registry(), world.types(), m_inspectedBuildingId);
     world.resource<ImGuiLayer>().endFrame(cmd);
 
     vkCmdEndRenderPass(cmd);

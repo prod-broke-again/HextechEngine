@@ -11,6 +11,7 @@
 #include "engine/ecs/Components.hpp"
 #include "engine/ecs/Systems.hpp"
 #include "engine/integration/ImGuiLayer.hpp"
+#include "engine/ui/ComponentInspector.hpp"
 #include "engine/integration/PlatformGLFW.hpp"
 #include "engine/physics/CharacterController.hpp"
 #include "engine/physics/JoltWorld.hpp"
@@ -889,6 +890,8 @@ void SandboxModule::renderUi(World& world) {
     }
 
     ImGui::End();
+
+    engine::ui::drawComponentInspector(world.registry(), world.types(), m_selectedEntity);
 }
 
 } // namespace engine::sandbox

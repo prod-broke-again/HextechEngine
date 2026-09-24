@@ -8,6 +8,7 @@ target_link_libraries(sandbox PRIVATE
     engine_world
     engine_core
     engine_integration
+    engine_ui
     engine_vulkan
     engine_assets
     engine_ecs

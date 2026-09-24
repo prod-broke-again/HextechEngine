@@ -41,6 +41,7 @@ target_link_libraries(era_sandbox PRIVATE
     engine_ecs
     engine_vulkan
     engine_integration
+    engine_ui
     engine_audio
     engine_vfx
     engine_world
