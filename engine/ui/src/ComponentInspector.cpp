@@ -122,6 +122,9 @@ void drawFieldWidget(void* component, const FieldDesc& field, EditorHistory* his
 
     ImGui::PushID(field.name.data());
     drawLabel(field);
+    if (field.transient) {
+        ImGui::BeginDisabled();
+    }
 
     switch (field.type) {
     case FieldType::Bool:
@@ -175,6 +178,11 @@ void drawFieldWidget(void* component, const FieldDesc& field, EditorHistory* his
         return;
     }
 
+    if (field.transient) {
+        ImGui::EndDisabled();
+        ImGui::PopID();
+        return;
+    }
     trackFieldHistory(history, pending, beforeSnap, field, component);
     ImGui::PopID();
 }

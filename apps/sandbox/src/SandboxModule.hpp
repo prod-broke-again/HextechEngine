@@ -62,6 +62,7 @@ private:
     void spawnDynamicObject(World& world, const MeshComponent& meshComp, const glm::vec3& halfExtents);
     void clearSpawnedObjects(World& world);
     void updateFrame(World& world, float deltaTime);
+    void applyCameraLook(World& world);
     bool renderFrame(World& world);
     void renderUi(World& world);
     void handleResize(const WindowResizeEvent& e, World& world);

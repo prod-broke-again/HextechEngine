@@ -18,10 +18,21 @@ struct BuildingPlacedEvent {
     int gridX = 0;
     int gridZ = 0;
     StringHash type = BuildingIds::None;
+    uint8_t facing = 0;
 };
 
 struct BuildingRemovedEvent {
     entt::entity entity = entt::null;
+    int gridX = 0;
+    int gridZ = 0;
+};
+
+struct TrailWornEvent {
+    int gridX = 0;
+    int gridZ = 0;
+};
+
+struct TrailClearedEvent {
     int gridX = 0;
     int gridZ = 0;
 };

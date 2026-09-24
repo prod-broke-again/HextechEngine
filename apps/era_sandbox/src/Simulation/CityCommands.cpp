@@ -24,7 +24,7 @@ CmdResult validate(const World& world, const PlaceBuildingCmd& cmd) {
     }
 
     const auto& grid = world.resource<GridIndex>();
-    if (grid.cells[cmd.z][cmd.x].type != CellType::Empty) {
+    if (!isBuildableCell(grid.cells[cmd.z][cmd.x].type)) {
         return CmdResult::fail(CmdStatus::TileOccupied, "Tile is not empty");
     }
 
@@ -41,7 +41,7 @@ CmdResult validate(const World& world, const PlaceBuildingCmd& cmd) {
 }
 
 void apply(World& world, const PlaceBuildingCmd& cmd) {
-    CitySystems::placeBuilding(world, cmd.x, cmd.z, cmd.type);
+    CitySystems::placeBuilding(world, cmd.x, cmd.z, cmd.type, wrapBuildingFacing(cmd.facing));
 }
 
 // ----------------------------------------------------------------------------
@@ -55,7 +55,7 @@ CmdResult validate(const World& world, const DemolishBuildingCmd& cmd) {
 
     const auto& grid = world.resource<GridIndex>();
     const CellData& cell = grid.cells[cmd.z][cmd.x];
-    if (cell.type == CellType::Empty) {
+    if (cell.type != CellType::Road && cell.type != CellType::Building) {
         return CmdResult::fail(CmdStatus::TargetNotFound, "No building on tile");
     }
 

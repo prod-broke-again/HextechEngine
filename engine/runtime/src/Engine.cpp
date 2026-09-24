@@ -41,6 +41,10 @@ void Engine::run() {
             dt = 0.25f;
         }
 
+        for (auto* m : m_modules.sortedModules()) {
+            m->beginFrame(m_world);
+        }
+
         accumulator += dt;
         int ticksExecuted = 0;
 
@@ -60,6 +64,10 @@ void Engine::run() {
 
         float alpha = accumulator / kTickRate;
         render(alpha);
+
+        for (auto* m : m_modules.sortedModules()) {
+            m->endFrame(m_world);
+        }
     }
 }
 

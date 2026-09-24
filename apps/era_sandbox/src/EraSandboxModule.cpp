@@ -16,8 +16,10 @@
 #include "engine/core/Input.hpp"
 #include "engine/core/Path.hpp"
 #include "engine/ecs/Systems.hpp"
+#include "engine/renderer/vulkan/GpuMeshCache.hpp"
 
 #include <GLFW/glfw3.h>
+#include <glm/gtc/constants.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <imgui.h>
 #include <imgui_impl_vulkan.h>
@@ -30,6 +32,12 @@
 #include <vector>
 
 namespace {
+
+glm::quat facingToQuat(uint8_t facing) {
+    return glm::angleAxis(
+        static_cast<float>(engine::era::wrapBuildingFacing(facing)) * glm::half_pi<float>(),
+        glm::vec3(0.0f, 1.0f, 0.0f));
+}
 
 void handleSceneRequests(engine::World& world, engine::ui::EditorHistory& history,
                          engine::ui::SceneSaveControls& scene, glm::vec3& sun) {
@@ -181,6 +189,15 @@ MeshCpuData createHoverQuadMesh() {
     return mesh;
 }
 
+void attachRenderable(entt::registry& registry, entt::entity entity) {
+    if (!registry.all_of<engine::TransformWorld>(entity)) {
+        registry.emplace<engine::TransformWorld>(entity);
+    }
+    if (!registry.all_of<engine::RenderableTag>(entity)) {
+        registry.emplace<engine::RenderableTag>(entity);
+    }
+}
+
 } // namespace
 
 void EraSandboxModule::registerTypes(TypeRegistry& registry) {
@@ -200,6 +217,8 @@ void EraSandboxModule::onAttach(World& world) {
     // Bind events
     world.events().connect<BuildingPlacedEvent, &EraSandboxModule::spawnVisualBuilding>(this);
     world.events().connect<BuildingRemovedEvent, &EraSandboxModule::removeVisualBuilding>(this);
+    world.events().connect<TrailWornEvent, &EraSandboxModule::spawnTrailVisual>(this);
+    world.events().connect<TrailClearedEvent, &EraSandboxModule::onTrailCleared>(this);
     world.events().connect<CarrierSpawnedEvent, &EraSandboxModule::spawnVisualCarrier>(this);
     world.events().connect<BuildingStatusEvent, &EraSandboxModule::spawnAlertIndicator>(this);
     world.events().connect<EraEvolvedEvent, &EraSandboxModule::onEraEvolved>(this);
@@ -213,11 +232,14 @@ void EraSandboxModule::onAttach(World& world) {
 void EraSandboxModule::onDetach(World& world) {
     world.events().disconnect<BuildingPlacedEvent>(this);
     world.events().disconnect<BuildingRemovedEvent>(this);
+    world.events().disconnect<TrailWornEvent>(this);
+    world.events().disconnect<TrailClearedEvent>(this);
     world.events().disconnect<CarrierSpawnedEvent>(this);
     world.events().disconnect<BuildingStatusEvent>(this);
     world.events().disconnect<EraEvolvedEvent>(this);
 
     m_alertEntities.clear();
+    m_trailEntities.clear();
     if (m_world) {
         vkDeviceWaitIdle(m_world->resource<VulkanContext>().device());
     }
@@ -256,12 +278,53 @@ void EraSandboxModule::spawnVisualBuilding(const BuildingPlacedEvent& ev) {
         static_cast<float>(ev.gridZ) * kTileSize + 0.5f * kTileSize
     );
     
-    const float randomYaw = (static_cast<float>((ev.gridX * 73856093) ^ (ev.gridZ * 19349663)) / static_cast<float>(0xFFFFFFFF)) * 6.28f;
-    t.rotation = glm::angleAxis(randomYaw, glm::vec3(0.0f, 1.0f, 0.0f));
+    t.rotation = facingToQuat(ev.facing);
 
     if (ev.type == BuildingIds::TownCenter) {
         mc.tint = glm::vec3(1.1f, 1.0f, 0.8f);
     }
+    removeTrailVisual(ev.gridX, ev.gridZ);
+    attachRenderable(registry, ev.entity);
+}
+
+void EraSandboxModule::onTrailCleared(const TrailClearedEvent& ev) {
+    removeTrailVisual(ev.gridX, ev.gridZ);
+}
+
+void EraSandboxModule::spawnTrailVisual(const TrailWornEvent& ev) {
+    removeTrailVisual(ev.gridX, ev.gridZ);
+
+    World& world = *m_world;
+    entt::entity trail = world.registry().create();
+    auto& mc = world.registry().emplace<MeshComponent>(trail);
+    mc.mesh = m_cityMeshes.getTrailMesh();
+    mc.tint = glm::vec3(0.85f, 0.70f, 0.45f);
+    mc.roughness = 0.95f;
+
+    auto& t = world.registry().emplace<TransformLocal>(trail);
+    t.translation = glm::vec3(
+        static_cast<float>(ev.gridX) * kTileSize + 0.5f * kTileSize,
+        0.0f,
+        static_cast<float>(ev.gridZ) * kTileSize + 0.5f * kTileSize
+    );
+    attachRenderable(world.registry(), trail);
+
+    const uint32_t key = static_cast<uint32_t>(ev.gridZ) * static_cast<uint32_t>(kGridSize)
+                       + static_cast<uint32_t>(ev.gridX);
+    m_trailEntities[key] = trail;
+}
+
+void EraSandboxModule::removeTrailVisual(int gridX, int gridZ) {
+    const uint32_t key = static_cast<uint32_t>(gridZ) * static_cast<uint32_t>(kGridSize)
+                       + static_cast<uint32_t>(gridX);
+    auto it = m_trailEntities.find(key);
+    if (it == m_trailEntities.end()) {
+        return;
+    }
+    if (m_world->registry().valid(it->second)) {
+        m_world->registry().destroy(it->second);
+    }
+    m_trailEntities.erase(it);
 }
 
 void EraSandboxModule::removeVisualBuilding(const BuildingRemovedEvent& ev) {
@@ -275,6 +338,7 @@ void EraSandboxModule::spawnVisualCarrier(const CarrierSpawnedEvent& ev) {
     mc.mesh = m_cityMeshes.getCarrierMesh(world.resource<CityState>().currentEra);
     mc.tint = glm::vec3(0.9f, 0.5f, 0.2f);
     registry.emplace<TransformLocal>(ev.entity);
+    attachRenderable(registry, ev.entity);
 }
 
 void EraSandboxModule::spawnAlertIndicator(const BuildingStatusEvent& ev) {
@@ -301,6 +365,7 @@ void EraSandboxModule::spawnAlertIndicator(const BuildingStatusEvent& ev) {
     }
 
     world.registry().emplace<TransformLocal>(alertEnt);
+    attachRenderable(world.registry(), alertEnt);
     m_alertEntities[ev.entity] = alertEnt;
 }
 
@@ -324,6 +389,8 @@ void EraSandboxModule::onEraEvolved(const EraEvolvedEvent& ev) {
 }
 
 void EraSandboxModule::setupScene(World& world) {
+    m_cityMeshes.init(world.resource<GpuMeshCache>());
+
     // 1. Terrain Grid (32x32 tiles + outer border)
     const MeshCpuData gridMesh = createGridMesh(kGridSize, kTileSize);
     const uint32_t gridMeshId = m_world->resource<GpuMeshCache>().upload(gridMesh);
@@ -444,7 +511,8 @@ void EraSandboxModule::updateFrame(World& world, float deltaTime) {
                     m_inspectedBuildingId = entt::null;
                 }
             } else if (m_selectedBuildType != BuildingIds::None) {
-                m_world->commandQueue().enqueue(PlaceBuildingCmd{m_hoverX, m_hoverZ, m_selectedBuildType});
+                m_world->commandQueue().enqueue(PlaceBuildingCmd{
+                    m_hoverX, m_hoverZ, m_selectedBuildType, m_placeFacing});
                 if (!m_world->resource<Input>().keyDown(GLFW_KEY_LEFT_SHIFT)) {
                     m_selectedBuildType = BuildingIds::None;
                 }
@@ -461,6 +529,12 @@ void EraSandboxModule::updateFrame(World& world, float deltaTime) {
             m_selectedBuildType = BuildingIds::None;
             m_demolishMode = false;
         }
+    }
+
+    if (m_selectedBuildType != BuildingIds::None && !m_demolishMode
+        && !ImGui::GetIO().WantTextInput
+        && m_world->resource<Input>().keyPressed(GLFW_KEY_R)) {
+        m_placeFacing = wrapBuildingFacing(static_cast<int>(m_placeFacing) + 1);
     }
 
     if (m_world->resource<Input>().keyPressed(GLFW_KEY_F5)) {
@@ -537,12 +611,13 @@ void EraSandboxModule::updateFrame(World& world, float deltaTime) {
                 0.0f,
                 static_cast<float>(m_hoverZ) * kTileSize + 0.5f * kTileSize
             );
+            t.rotation = facingToQuat(m_placeFacing);
             t.scale = glm::vec3(1.0f);
             
             auto& state = m_world->resource<CityState>();
             mc.mesh = m_cityMeshes.getBuildingMesh(m_selectedBuildType, state.currentEra);
 
-            if (validate(*m_world, PlaceBuildingCmd{m_hoverX, m_hoverZ, m_selectedBuildType}).ok()) {
+            if (validate(*m_world, PlaceBuildingCmd{m_hoverX, m_hoverZ, m_selectedBuildType, m_placeFacing}).ok()) {
                 mc.tint = glm::vec3(0.3f, 1.0f, 0.4f);
                 mc.emissiveIntensity = 0.8f;
             } else {
@@ -553,6 +628,8 @@ void EraSandboxModule::updateFrame(World& world, float deltaTime) {
             t.scale = glm::vec3(0.0f);
         }
     }
+
+    updateTransforms(m_world->registry());
 }
 
 void EraSandboxModule::renderUi(const World& world, CommandQueue& commands) {

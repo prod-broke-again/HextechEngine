@@ -278,10 +278,27 @@ MeshCpuData buildBakeryMesh() {
     return mesh;
 }
 
+MeshCpuData buildTrailMesh() {
+    MeshCpuData mesh;
+    const glm::vec3 dirt{0.36f, 0.24f, 0.12f};
+    const glm::vec3 mud{0.26f, 0.17f, 0.08f};
+    // Narrow, broken dirt — visibly worse than a paved road
+    appendBox(mesh, {0.00f, 0.006f, 0.00f}, {0.22f, 0.005f, 0.24f}, dirt);
+    appendBox(mesh, {-0.12f, 0.005f, 0.14f}, {0.12f, 0.004f, 0.10f}, mud);
+    appendBox(mesh, {0.14f, 0.005f, -0.12f}, {0.10f, 0.004f, 0.13f}, dirt);
+    appendBox(mesh, {-0.04f, 0.007f, -0.18f}, {0.09f, 0.003f, 0.07f}, mud);
+    return mesh;
+}
+
 MeshCpuData buildRoadMesh() {
     MeshCpuData mesh;
-    // Packed trail slab
-    appendBox(mesh, {0.0f, 0.015f, 0.0f}, {0.48f, 0.012f, 0.48f}, {0.50f, 0.40f, 0.26f});
+    const glm::vec3 packed{0.62f, 0.56f, 0.44f};
+    const glm::vec3 stone{0.70f, 0.66f, 0.56f};
+    const glm::vec3 edge{0.48f, 0.42f, 0.32f};
+    appendBox(mesh, {0.0f, 0.018f, 0.0f}, {0.46f, 0.010f, 0.46f}, packed);
+    appendBox(mesh, {0.0f, 0.022f, 0.0f}, {0.38f, 0.006f, 0.38f}, stone);
+    appendBox(mesh, {-0.42f, 0.016f, 0.0f}, {0.04f, 0.008f, 0.46f}, edge);
+    appendBox(mesh, { 0.42f, 0.016f, 0.0f}, {0.04f, 0.008f, 0.46f}, edge);
     return mesh;
 }
 
@@ -361,6 +378,7 @@ void ProceduralCityMeshes::init(GpuMeshCache& cache) {
     const uint32_t farmMesh = cache.upload(buildWheatFarmMesh());
     const uint32_t bakeryMesh = cache.upload(buildBakeryMesh());
     const uint32_t roadMesh = cache.upload(buildRoadMesh());
+    m_trailMesh = cache.upload(buildTrailMesh());
 
     // 2. Register building meshes by StringHash
     m_buildingMeshes[BuildingIds::TownCenter] = {cache.upload(buildCampfireMesh()), cache.upload(buildTownCenterBronzeAgeMesh())};

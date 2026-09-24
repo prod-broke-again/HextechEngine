@@ -2,6 +2,7 @@
 #include "Simulation/CitySystems.hpp"
 #include "Simulation/Components.hpp"
 #include "Simulation/CityEvents.hpp"
+#include "Simulation/Pathfinder.hpp"
 #include "engine/foundation/EventBus.hpp"
 #include "engine/modules/statemachine/StateMachine.hpp"
 
@@ -69,27 +70,128 @@ static glm::vec3 getIdleCarrierRestPos(const World& world, size_t index, size_t 
     return {tcPos.x + std::cos(angle) * radius, 0.0f, tcPos.z + std::sin(angle) * radius};
 }
 
-static float computeTripDuration(const World& world, const glm::vec3& from, const glm::vec3& to) {
-    const float dist = glm::distance(from, to);
-    auto& state = world.resource<CityState>();
-    const CarrierDef cDef = getCarrierDefForEra(state.currentEra);
-    float speed = cDef.speed;
+static GridCoord worldToCell(const glm::vec3& pos) {
+    return {static_cast<int>(std::floor(pos.x)), static_cast<int>(std::floor(pos.z))};
+}
 
-    const int midX = static_cast<int>((from.x + to.x) * 0.5f);
-    const int midZ = static_cast<int>((from.z + to.z) * 0.5f);
-    if (isInBounds(midX, midZ)) {
-        auto& grid = world.resource<GridIndex>();
-        if (grid.getCell(midX, midZ).type == CellType::Road) {
-            speed *= cDef.roadSpeedMultiplier;
+static glm::vec3 cellCenter(GridCoord cell) {
+    return {static_cast<float>(cell.x) + 0.5f, 0.0f, static_cast<float>(cell.z) + 0.5f};
+}
+
+static GridCoord townCenterCell(const World& world) {
+    auto view = world.registry().view<const BuildingComponent, const GridPosition>();
+    for (auto [e, b, pos] : view.each()) {
+        if (b.type == BuildingIds::TownCenter) {
+            return {pos.x, pos.z};
         }
     }
+    return {15, 15};
+}
 
-    return std::max(1.2f, dist / std::max(0.5f, speed));
+static float speedOnCell(const World& world, GridCoord cell) {
+    const CarrierDef cDef = getCarrierDefForEra(world.resource<CityState>().currentEra);
+    float speed = cDef.speed;
+    if (isInBounds(cell.x, cell.z)
+        && world.resource<GridIndex>().getCell(cell.x, cell.z).type == CellType::Road) {
+        speed *= cDef.roadSpeedMultiplier;
+    }
+    return speed;
+}
+
+static void wearTrailIfEmpty(World& world, GridCoord cell) {
+    if (!isInBounds(cell.x, cell.z)) {
+        return;
+    }
+    auto& tile = world.resource<GridIndex>().at(cell.x, cell.z);
+    if (tile.type != CellType::Empty) {
+        return;
+    }
+    tile.type = CellType::Trail;
+    world.events().enqueue<TrailWornEvent>({cell.x, cell.z});
+}
+
+static void startCurrentSegment(World& world, CarrierJourneyComponent& j) {
+    if (j.pathIndex + 1 >= j.pathLength) {
+        j.progress = 1.0f;
+        j.tripDuration = 0.05f;
+        j.startPos = j.currentPos;
+        j.targetPos = j.currentPos;
+        return;
+    }
+
+    const GridCoord next{j.pathX[j.pathIndex + 1], j.pathZ[j.pathIndex + 1]};
+    wearTrailIfEmpty(world, next);
+    j.startPos = j.currentPos;
+    j.targetPos = cellCenter(next);
+    const float dist = glm::distance(j.startPos, j.targetPos);
+    j.tripDuration = std::max(0.2f, dist / std::max(0.05f, speedOnCell(world, next)));
+    j.progress = 0.0f;
+}
+
+static void beginJourney(World& world, CarrierJourneyComponent& j, int destX, int destZ) {
+    j.destX = destX;
+    j.destZ = destZ;
+
+    const GridCoord home = townCenterCell(world);
+    const GridCoord goal{destX, destZ};
+    GridCoord start = worldToCell(j.currentPos);
+    if (!isInBounds(start.x, start.z)) {
+        start = home;
+    }
+    // Outbound trips start from the warehouse tile, not the idle parking offset.
+    // Otherwise the return path (building -> campfire) carves a second parallel trail.
+    if (goal.x != home.x || goal.z != home.z) {
+        start = home;
+    }
+
+    CarrierPath path;
+    findCarrierPath(world.resource<GridIndex>(), start, goal, path);
+    if (path.length < 1) {
+        makeManhattanPath(start, goal, path);
+    }
+
+    j.pathLength = static_cast<uint8_t>(std::min(path.length, CarrierJourneyComponent::kMaxPath));
+    j.pathIndex = 0;
+    for (int i = 0; i < j.pathLength; ++i) {
+        j.pathX[i] = static_cast<uint8_t>(path.cells[i].x);
+        j.pathZ[i] = static_cast<uint8_t>(path.cells[i].z);
+        wearTrailIfEmpty(world, path.cells[i]);
+    }
+
+    if (j.pathLength <= 1) {
+        j.progress = 1.0f;
+        j.tripDuration = 0.05f;
+        j.startPos = j.currentPos;
+        j.targetPos = cellCenter(goal);
+        j.currentPos = j.targetPos;
+        return;
+    }
+
+    startCurrentSegment(world, j);
+}
+
+// true = still traveling, false = arrived at dest
+static bool advanceAlongPath(World& world, CarrierJourneyComponent& j) {
+    if (j.pathLength >= 2 && j.pathIndex + 1 < j.pathLength) {
+        const GridCoord arrived{j.pathX[j.pathIndex + 1], j.pathZ[j.pathIndex + 1]};
+        wearTrailIfEmpty(world, arrived);
+        j.currentPos = j.targetPos;
+        ++j.pathIndex;
+    }
+
+    if (j.pathIndex + 1 >= j.pathLength) {
+        j.progress = 1.0f;
+        return false;
+    }
+
+    startCurrentSegment(world, j);
+    return true;
 }
 
 void registerSimulationTypes(World& /*world*/) {
     WorldHasher::registerComponent<BuildingComponent>("BuildingComponent", [](const BuildingComponent& b, uint64_t& h) {
         WorldHasher::hashPod(h, b.type.value());
+        WorldHasher::hashPod(h, b.facing);
     });
 
     WorldHasher::registerComponent<GridPosition>("GridPosition", [](const GridPosition& p, uint64_t& h) {
@@ -131,6 +233,14 @@ void registerSimulationTypes(World& /*world*/) {
         WorldHasher::hashPod(h, j.progress);
         WorldHasher::hashPod(h, j.tripDuration);
         WorldHasher::hashPod(h, j.bobbingTimer);
+        WorldHasher::hashPod(h, j.destX);
+        WorldHasher::hashPod(h, j.destZ);
+        WorldHasher::hashPod(h, j.pathLength);
+        WorldHasher::hashPod(h, j.pathIndex);
+        for (uint8_t i = 0; i < j.pathLength && i < CarrierJourneyComponent::kMaxPath; ++i) {
+            WorldHasher::hashPod(h, j.pathX[i]);
+            WorldHasher::hashPod(h, j.pathZ[i]);
+        }
     });
 
     WorldHasher::registerResource<CityState>("CityState", [](const CityState& s, uint64_t& h) {
@@ -159,8 +269,8 @@ void registerSimulationTypes(World& /*world*/) {
 }
 
 static void migrateBuildingComponent(void* data, uint32_t fromVersion) {
+    auto* comp = reinterpret_cast<BuildingComponent*>(data);
     if (fromVersion == 1) {
-        auto* comp = reinterpret_cast<BuildingComponent*>(data);
         uint8_t oldVal = static_cast<uint8_t>(comp->type.value() & 0xFF);
         StringHash newHash = BuildingIds::None;
         switch (oldVal) {
@@ -176,11 +286,15 @@ static void migrateBuildingComponent(void* data, uint32_t fromVersion) {
         }
         comp->type = newHash;
     }
+    if (fromVersion < 3) {
+        comp->facing = 0;
+    }
 }
 
 void registerCityTypes(TypeRegistry& types) {
-    types.registerComponent<BuildingComponent>("BuildingComponent", 2, &migrateBuildingComponent)
-        .field("type", &BuildingComponent::type);
+    types.registerComponent<BuildingComponent>("BuildingComponent", 3, &migrateBuildingComponent)
+        .field("type", &BuildingComponent::type)
+        .field("facing", &BuildingComponent::facing);
 
     types.registerComponent<GridPosition>("GridPosition", 1)
         .field("x", &GridPosition::x)
@@ -302,21 +416,27 @@ bool evolveToNextEra(World& world) {
     return true;
 }
 
-bool placeBuilding(World& world, int x, int z, StringHash type) {
+bool placeBuilding(World& world, int x, int z, StringHash type, uint8_t facing) {
     if (!isInBounds(x, z) || type == BuildingIds::None) return false;
 
     auto& grid = world.resource<GridIndex>();
-    if (grid.at(x, z).type != CellType::Empty) return false;
+    CellData& destCell = grid.at(x, z);
+    if (!isBuildableCell(destCell.type)) return false;
 
     auto& state = world.resource<CityState>();
     const BuildingDef& def = getBuildingDef(type);
     if (!state.storage.tryConsume(def.cost)) return false;
+
+    if (destCell.type == CellType::Trail) {
+        world.events().enqueue<TrailClearedEvent>({x, z});
+    }
 
     auto& registry = world.registry();
     entt::entity e = registry.create();
     
     auto& b = registry.emplace<BuildingComponent>(e);
     b.type = type;
+    b.facing = wrapBuildingFacing(facing);
     
     auto& pos = registry.emplace<GridPosition>(e);
     pos.x = x;
@@ -334,12 +454,13 @@ bool placeBuilding(World& world, int x, int z, StringHash type) {
         prod.cycleSeconds = def.production.cycleSeconds;
         uint32_t ticks = static_cast<uint32_t>(std::max(0.5f, def.production.cycleSeconds) * 20.0f);
         prod.cycleTimer = engine::timer::TickTimer{ticks, true};
+        prod.internalBuffer = 1.0f; // first courier leaves immediately and stamps a trail
     }
 
     grid.at(x, z).type = (type == BuildingIds::Road || def.category == BuildingCategory::Infrastructure) ? CellType::Road : CellType::Building;
     grid.at(x, z).entity = e;
 
-    world.events().enqueue<BuildingPlacedEvent>({e, x, z, type});
+    world.events().enqueue<BuildingPlacedEvent>({e, x, z, type, b.facing});
     
     updateAggregateStats(world);
     return true;
@@ -350,7 +471,7 @@ bool demolishBuilding(World& world, int x, int z) {
 
     auto& grid = world.resource<GridIndex>();
     CellData& cell = grid.at(x, z);
-    if (cell.type == CellType::Empty) return false;
+    if (cell.type != CellType::Road && cell.type != CellType::Building) return false;
 
     auto& registry = world.registry();
     entt::entity e = cell.entity;
@@ -367,15 +488,12 @@ bool demolishBuilding(World& world, int x, int z) {
     }
 
     // Cancel carriers
-    const glm::vec3 tcPos = getTownCenterPosition(world);
     auto carrierView = registry.view<CarrierComponent, CarrierJourneyComponent, engine::statemachine::StateMachineComponent>();
     for (auto [ce, c, j, sm] : carrierView.each()) {
         if (c.targetBuilding == e && sm.current == CarrierStates::EnRouteToPickup) {
             sm.transitionTo(CarrierStates::ReturningToWarehouse);
-            j.startPos = j.currentPos;
-            j.targetPos = tcPos;
-            j.progress = 0.0f;
-            j.tripDuration = computeTripDuration(world, j.startPos, j.targetPos);
+            const GridCoord home = townCenterCell(world);
+            beginJourney(world, j, home.x, home.z);
             c.targetBuilding = entt::null;
             c.hasCargo = false;
             c.carriedAmount = 0.0f;
@@ -560,7 +678,7 @@ void tickCarriers(World& world, Tick /*tick*/) {
     auto& state = world.resource<CityState>();
     auto& pool = world.resource<CarrierPool>();
     const CarrierDef cDef = getCarrierDefForEra(state.currentEra);
-    const glm::vec3 tcPos = getTownCenterPosition(world);
+    const GridCoord home = townCenterCell(world);
     auto& registry = world.registry();
     
     auto bView = registry.view<BuildingComponent, GridPosition, ProductionComponent>();
@@ -571,7 +689,8 @@ void tickCarriers(World& world, Tick /*tick*/) {
         if (sm.current == CarrierStates::IdleAtWarehouse) {
             entt::entity bestCandidate = entt::null;
             float highestFillRatio = -1.0f;
-            glm::vec3 bestPos{0.0f};
+            int bestX = 0;
+            int bestZ = 0;
 
             for (auto [be, b, pos, prod] : bView.each()) {
                 const BuildingDef& bDef = getBuildingDef(b.type);
@@ -583,7 +702,8 @@ void tickCarriers(World& world, Tick /*tick*/) {
                 if (fillRatio > highestFillRatio) {
                     highestFillRatio = fillRatio;
                     bestCandidate = be;
-                    bestPos = {static_cast<float>(pos.x) + 0.5f, 0.0f, static_cast<float>(pos.z) + 0.5f};
+                    bestX = pos.x;
+                    bestZ = pos.z;
                 }
             }
 
@@ -596,27 +716,27 @@ void tickCarriers(World& world, Tick /*tick*/) {
                 c.hasCargo = false;
                 c.carriedAmount = 0.0f;
                 
-                j.startPos = j.currentPos;
-                j.targetPos = bestPos;
-                j.progress = 0.0f;
-                j.tripDuration = computeTripDuration(world, j.startPos, j.targetPos);
+                beginJourney(world, j, bestX, bestZ);
             } else {
                 j.currentPos = getIdleCarrierRestPos(world, i, pool.totalCarrierCount);
             }
         } else {
+            if (j.pathLength < 2) {
+                beginJourney(world, j, j.destX, j.destZ);
+            }
+
             j.bobbingTimer += dt * 10.0f;
             j.progress += dt / std::max(0.1f, j.tripDuration);
             j.currentPos = glm::mix(j.startPos, j.targetPos, std::min(1.0f, j.progress));
 
-            if (sm.current == CarrierStates::EnRouteToPickup) {
-                if (!registry.valid(c.targetBuilding)) {
-                    sm.transitionTo(CarrierStates::ReturningToWarehouse);
-                    c.targetBuilding = entt::null;
-                    j.startPos = j.currentPos;
-                    j.targetPos = tcPos;
-                    j.progress = 0.0f;
-                    j.tripDuration = computeTripDuration(world, j.startPos, j.targetPos);
-                } else if (j.progress >= 1.0f) {
+            if (sm.current == CarrierStates::EnRouteToPickup && !registry.valid(c.targetBuilding)) {
+                sm.transitionTo(CarrierStates::ReturningToWarehouse);
+                c.targetBuilding = entt::null;
+                beginJourney(world, j, home.x, home.z);
+            } else if (j.progress >= 1.0f) {
+                if (advanceAlongPath(world, j)) {
+                    // Continue to the next orthogonal tile.
+                } else if (sm.current == CarrierStates::EnRouteToPickup) {
                     auto& b = registry.get<BuildingComponent>(c.targetBuilding);
                     auto& pos = registry.get<GridPosition>(c.targetBuilding);
                     auto& prod = registry.get<ProductionComponent>(c.targetBuilding);
@@ -647,13 +767,8 @@ void tickCarriers(World& world, Tick /*tick*/) {
                     c.hasCargo = (pickupAmount > 0.0f);
 
                     sm.transitionTo(CarrierStates::ReturningToWarehouse);
-                    j.startPos = j.currentPos;
-                    j.targetPos = tcPos;
-                    j.progress = 0.0f;
-                    j.tripDuration = computeTripDuration(world, j.startPos, j.targetPos);
-                }
-            } else if (sm.current == CarrierStates::ReturningToWarehouse) {
-                if (j.progress >= 1.0f) {
+                    beginJourney(world, j, home.x, home.z);
+                } else if (sm.current == CarrierStates::ReturningToWarehouse) {
                     if (c.hasCargo && c.carriedAmount > 0.0f) {
                         state.storage.add(c.carriedResource, c.carriedAmount);
                     }
@@ -663,6 +778,7 @@ void tickCarriers(World& world, Tick /*tick*/) {
                     c.hasCargo = false;
                     c.carriedAmount = 0.0f;
                     j.progress = 0.0f;
+                    j.pathLength = 0;
                     j.currentPos = getIdleCarrierRestPos(world, i, pool.totalCarrierCount);
                 }
             }

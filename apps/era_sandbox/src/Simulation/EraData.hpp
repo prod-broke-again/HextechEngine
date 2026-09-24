@@ -53,6 +53,13 @@ namespace BuildingIds {
     inline constexpr StringHash Road = "road"_sh;
 }
 
+constexpr uint8_t kBuildingFacingCount = 4;
+
+inline uint8_t wrapBuildingFacing(int facing) {
+    const int n = static_cast<int>(kBuildingFacingCount);
+    return static_cast<uint8_t>(((facing % n) + n) % n);
+}
+
 enum class BuildingCategory : uint8_t {
     Anchor = 0,
     Housing,
@@ -92,8 +99,8 @@ struct BuildingDef {
 };
 
 struct CarrierDef {
-    float speed = 2.2f;  // World units per second
-    float roadSpeedMultiplier = 1.4f; // 40% speed boost on paved roads
+    float speed = 0.73f;  // World units per second on dirt / worn trails
+    float roadSpeedMultiplier = 1.35f; // Modest boost on paved roads
     int capacity = 2;    // Cargo capacity
 };
 

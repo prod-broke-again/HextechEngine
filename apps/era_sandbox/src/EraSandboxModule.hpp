@@ -20,6 +20,7 @@
 #include "engine/ui/TransformGizmo.hpp"
 #include "engine/ui/EditorChrome.hpp"
 
+#include <cstdint>
 #include <map>
 #include <memory>
 #include <iostream>
@@ -52,6 +53,9 @@ private:
 
     void spawnVisualBuilding(const BuildingPlacedEvent& ev);
     void removeVisualBuilding(const BuildingRemovedEvent& ev);
+    void spawnTrailVisual(const TrailWornEvent& ev);
+    void onTrailCleared(const TrailClearedEvent& ev);
+    void removeTrailVisual(int gridX, int gridZ);
     void spawnVisualCarrier(const CarrierSpawnedEvent& ev);
     void spawnAlertIndicator(const BuildingStatusEvent& ev);
     void removeAlertIndicator(entt::entity buildingId);
@@ -66,6 +70,7 @@ private:
 
     // Notice: NO m_simulation, NO parallel maps!
     std::map<entt::entity, entt::entity> m_alertEntities; // map building entity -> alert indicator entity
+    std::map<uint32_t, entt::entity> m_trailEntities;
 
     static constexpr int kGridSize = 32;
     static constexpr float kTileSize = 1.0f;
@@ -76,6 +81,7 @@ private:
     glm::vec3 m_groundHitPos{0.0f};
 
     StringHash m_selectedBuildType = BuildingIds::None;
+    uint8_t m_placeFacing = 0;
     bool m_demolishMode = false;
     entt::entity m_inspectedBuildingId = entt::null; // using entity instead of uint32_t
 

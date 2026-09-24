@@ -261,7 +261,7 @@ static std::vector<BuildingDef> makeDefaultBuildingRegistry() {
         BuildingDef def{
             .id = BuildingIds::Road,
             .stringId = "road",
-            .name = "Trail / Road",
+            .name = "Paved Road",
             .category = BuildingCategory::Infrastructure,
             .requiredEra = EraType::StoneAge,
             .cost = {{ResourceIds::Wood, 1.0f}},
@@ -269,8 +269,8 @@ static std::vector<BuildingDef> makeDefaultBuildingRegistry() {
             .maxInhabitants = 0,
             .baseTaxIncomePerMinute = 0.0f,
             .production = {},
-            .primaryColor = {0.48f, 0.38f, 0.24f},
-            .description = "Path connecting settlement buildings.",
+            .primaryColor = {0.62f, 0.58f, 0.48f},
+            .description = "Packed stone path. Couriers prefer it and walk a bit faster than on worn trails.",
             .mesh = "road"
         };
         defs.push_back(def);
@@ -293,8 +293,8 @@ static std::array<EraDefinition, kEraCount> makeDefaultEraDefinitions() {
             {ResourceIds::Fish, 20.0f}
         };
         def.carrier = CarrierDef{
-            .speed = 2.2f,
-            .roadSpeedMultiplier = 1.4f,
+            .speed = 0.73f,
+            .roadSpeedMultiplier = 1.35f,
             .capacity = 2
         };
         def.carrierPoolSize = 2;
@@ -317,8 +317,8 @@ static std::array<EraDefinition, kEraCount> makeDefaultEraDefinitions() {
             {ResourceIds::Bread, 40.0f}
         };
         def.carrier = CarrierDef{
-            .speed = 3.4f,
-            .roadSpeedMultiplier = 1.4f,
+            .speed = 1.13f,
+            .roadSpeedMultiplier = 1.35f,
             .capacity = 4
         };
         def.carrierPoolSize = 4;
@@ -592,8 +592,8 @@ bool reloadEraData() {
                 def.carrierPoolSize = item.value("carrierPoolSize", 2);
 
                 if (item.contains("carrier") && item["carrier"].is_object()) {
-                    def.carrier.speed = item["carrier"].value("speed", 2.2f);
-                    def.carrier.roadSpeedMultiplier = item["carrier"].value("roadSpeedMultiplier", 1.4f);
+                    def.carrier.speed = item["carrier"].value("speed", 0.73f);
+                    def.carrier.roadSpeedMultiplier = item["carrier"].value("roadSpeedMultiplier", 1.35f);
                     def.carrier.capacity = item["carrier"].value("capacity", 2);
                 }
 

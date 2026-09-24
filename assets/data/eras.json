@@ -14,8 +14,8 @@
       }
     ],
     "carrier": {
-      "speed": 2.2,
-      "roadSpeedMultiplier": 1.4,
+      "speed": 0.73,
+      "roadSpeedMultiplier": 1.35,
       "capacity": 2
     },
     "carrierPoolSize": 2,
@@ -41,8 +41,8 @@
       }
     ],
     "carrier": {
-      "speed": 3.4,
-      "roadSpeedMultiplier": 1.4,
+      "speed": 1.13,
+      "roadSpeedMultiplier": 1.35,
       "capacity": 4
     },
     "carrierPoolSize": 4,

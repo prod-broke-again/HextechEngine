@@ -141,7 +141,7 @@
   },
   {
     "id": "road",
-    "name": "Trail / Road",
+    "name": "Paved Road",
     "category": "Infrastructure",
     "requiredEra": "StoneAge",
     "cost": {
@@ -150,8 +150,8 @@
     "footprint": [1, 1],
     "maxInhabitants": 0,
     "baseTaxIncomePerMinute": 0.0,
-    "primaryColor": [0.48, 0.38, 0.24],
+    "primaryColor": [0.62, 0.58, 0.48],
     "mesh": "road",
-    "description": "Path connecting settlement buildings."
+    "description": "Packed stone path. Couriers prefer it and walk a bit faster than on worn trails."
   }
 ]

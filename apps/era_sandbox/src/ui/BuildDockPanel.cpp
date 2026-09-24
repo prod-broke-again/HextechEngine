@@ -26,6 +26,7 @@ void drawBuildDock(
                      ImGuiWindowFlags_NoMove | ImGuiWindowFlags_AlwaysAutoResize)) {
         
         ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "CONSTRUCTION DOCK");
+        ImGui::TextDisabled("Couriers stamp a dirt trail to gatherers as soon as they leave.");
         ImGui::Separator();
         ImGui::Spacing();
 
@@ -100,6 +101,11 @@ void drawBuildDock(
             }
         }
         ImGui::PopStyleColor(2);
+
+        if (selectedBuildType != BuildingIds::None) {
+            ImGui::Spacing();
+            ImGui::TextDisabled("R — rotate (4 directions)");
+        }
 
     }
     ImGui::End();

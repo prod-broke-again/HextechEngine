@@ -17,6 +17,7 @@ add_executable(engine_tests
     runtime/ModuleRegistry_test.cpp
     world/CommandRegistry_test.cpp
     simulation/CityCommands_test.cpp
+    simulation/Pathfinder_test.cpp
     determinism/Determinism_test.cpp
     save/SaveModule_test.cpp
     data/DataModule_test.cpp

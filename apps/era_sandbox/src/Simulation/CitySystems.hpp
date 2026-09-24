@@ -22,7 +22,7 @@ void updateAggregateStats(World& world);
 void update(World& world, Tick tick);
 
 // Commands
-bool placeBuilding(World& world, int x, int z, StringHash type);
+bool placeBuilding(World& world, int x, int z, StringHash type, uint8_t facing = 0);
 bool demolishBuilding(World& world, int x, int z);
 bool evolveToNextEra(World& world);
 

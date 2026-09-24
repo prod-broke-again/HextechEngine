@@ -22,6 +22,16 @@ TEST_CASE("CityCommands - PlaceBuildingCmd") {
         const auto& grid = world.resource<GridIndex>();
         CHECK(grid.cells[10][10].type == CellType::Building);
         CHECK(world.registry().valid(grid.cells[10][10].entity));
+        CHECK(world.registry().get<BuildingComponent>(grid.cells[10][10].entity).facing == 0);
+    }
+
+    SUBCASE("Success - stores 90-degree facing") {
+        PlaceBuildingCmd cmd{11, 11, BuildingIds::Residence, 6}; // wraps to 2
+        CHECK(validate(world, cmd).ok());
+        apply(world, cmd);
+
+        const auto& grid = world.resource<GridIndex>();
+        CHECK(world.registry().get<BuildingComponent>(grid.cells[11][11].entity).facing == 2);
     }
 
     SUBCASE("Failure - out of bounds position") {

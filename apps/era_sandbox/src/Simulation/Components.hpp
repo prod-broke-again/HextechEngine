@@ -26,6 +26,7 @@ struct GridPosition {
 
 struct BuildingComponent {
     StringHash type = BuildingIds::None;
+    uint8_t facing = 0; // 0..3, 90-degree steps clockwise
 };
 
 struct ResidenceComponent {
@@ -62,13 +63,22 @@ struct CarrierComponent {
 };
 
 struct CarrierJourneyComponent {
+    static constexpr int kMaxPath = 96;
+
     glm::vec3 currentPos{0.0f};
     glm::vec3 startPos{0.0f};
     glm::vec3 targetPos{0.0f};
 
-    float progress = 0.0f; // 0.0 .. 1.0 along current journey
+    float progress = 0.0f; // 0.0 .. 1.0 along current segment
     float tripDuration = 2.5f;
     float bobbingTimer = 0.0f;
+
+    int destX = 0;
+    int destZ = 0;
+    std::array<uint8_t, kMaxPath> pathX{};
+    std::array<uint8_t, kMaxPath> pathZ{};
+    uint8_t pathLength = 0;
+    uint8_t pathIndex = 0;
 };
 
 // ----------------------------------------------------------------------------
@@ -105,8 +115,13 @@ struct CityState {
 enum class CellType : uint8_t {
     Empty = 0,
     Road,
-    Building
+    Building,
+    Trail    // Worn dirt path left by couriers
 };
+
+[[nodiscard]] inline bool isBuildableCell(CellType type) {
+    return type == CellType::Empty || type == CellType::Trail;
+}
 
 struct CellData {
     CellType type = CellType::Empty;

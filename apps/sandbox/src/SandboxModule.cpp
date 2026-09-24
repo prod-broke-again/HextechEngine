@@ -610,20 +610,6 @@ void SandboxModule::tick(World& world) {
             auto& camTransform = view.get<TransformLocal>(camEntity);
             auto& controller = view.get<FreeFlyController>(camEntity);
 
-            if (m_cursorCaptured) {
-                const glm::vec2 delta = m_inputMap.lookDelta();
-                if (delta.x != 0.f || delta.y != 0.f) {
-                    controller.yaw += delta.x * m_mouseSensitivity;
-                    controller.pitch -= delta.y * m_mouseSensitivity;
-                    controller.pitch = std::clamp(controller.pitch, -1.52f, 1.52f);
-                }
-            } else if (!mouseCaptured && m_inputMap.actionDown(input, Actions::Look)) {
-                const glm::vec2 delta = m_inputMap.lookDelta();
-                controller.yaw += delta.x * m_mouseSensitivity;
-                controller.pitch -= delta.y * m_mouseSensitivity;
-                controller.pitch = std::clamp(controller.pitch, -1.52f, 1.52f);
-            }
-
             const bool isSprinting = !keyboardCaptured && m_inputMap.actionDown(input, Actions::Sprint);
             character.walkSpeed = isSprinting ? 9.5f : 5.5f;
 
@@ -646,7 +632,7 @@ void SandboxModule::tick(World& world) {
             camTransform.translation = character.position() + glm::vec3(0.0f, character.eyeHeight, 0.0f);
         }
     } else {
-        updateFreeFlyCamera(registry, input, m_inputMap, deltaTime, m_cursorCaptured);
+        updateFreeFlyCamera(registry, input, m_inputMap, deltaTime, false);
     }
 
     // Update 3D audio listener from active camera
@@ -717,9 +703,35 @@ void SandboxModule::tick(World& world) {
     }
 }
 
+void SandboxModule::applyCameraLook(World& world) {
+    auto& input = world.resource<Input>();
+    auto& registry = world.registry();
+    m_inputMap.beginFrame(input);
+
+    const bool mouseCaptured = ImGui::GetIO().WantCaptureMouse;
+
+    auto view = registry.view<TransformLocal, CameraComponent, FreeFlyController>();
+    for (const auto camEntity : view) {
+        auto& controller = view.get<FreeFlyController>(camEntity);
+        const bool allowLook = m_cursorCaptured || (!mouseCaptured && m_inputMap.actionDown(input, Actions::Look));
+        if (!allowLook) {
+            continue;
+        }
+        const glm::vec2 delta = m_inputMap.lookDelta();
+        if (delta.x == 0.f && delta.y == 0.f) {
+            continue;
+        }
+        controller.yaw += delta.x * m_mouseSensitivity;
+        controller.pitch -= delta.y * m_mouseSensitivity;
+        controller.pitch = std::clamp(controller.pitch, -1.52f, 1.52f);
+    }
+}
+
 void SandboxModule::render(World& world, float /*alpha*/) {
     auto& platform = world.resource<PlatformGLFW>();
     if (platform.shouldClose()) return;
+
+    applyCameraLook(world);
 
     if (m_smokeTest) {
         if (++m_frameCount >= 100) {

@@ -25,12 +25,24 @@ void drawHoverTooltip(
     }
 
     const auto& grid = world.resource<GridIndex>();
-    entt::entity hoveredId = grid.at(hoverX, hoverZ).entity;
+    const CellData& cell = grid.at(hoverX, hoverZ);
+    if (cell.type == CellType::Trail) {
+        ImGui::BeginTooltip();
+        ImGui::TextUnformatted("Worn trail");
+        ImGui::TextColored(ImVec4(0.72f, 0.58f, 0.38f, 1.0f), "Slow dirt path left by couriers");
+        ImGui::EndTooltip();
+        return;
+    }
+
+    entt::entity hoveredId = cell.entity;
     if (world.registry().valid(hoveredId)) {
         ImGui::BeginTooltip();
         const auto& hb = world.registry().get<BuildingComponent>(hoveredId);
         const BuildingDef& hDef = getBuildingDef(hb.type);
         ImGui::TextUnformatted(hDef.name.c_str());
+        if (hb.type == BuildingIds::Road) {
+            ImGui::TextColored(ImVec4(0.7f, 0.75f, 0.55f, 1.0f), "Couriers walk faster here");
+        }
         ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "Click to inspect");
         ImGui::EndTooltip();
     }

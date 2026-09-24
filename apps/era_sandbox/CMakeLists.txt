@@ -2,6 +2,7 @@ add_library(era_simulation STATIC
     src/Simulation/EraData.cpp
     src/Simulation/CitySystems.cpp
     src/Simulation/CityCommands.cpp
+    src/Simulation/Pathfinder.cpp
 )
 
 target_link_libraries(era_simulation PUBLIC

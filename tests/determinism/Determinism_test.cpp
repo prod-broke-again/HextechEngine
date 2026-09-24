@@ -5,11 +5,13 @@
 #include "Simulation/CityCommands.hpp"
 #include "Simulation/CitySystems.hpp"
 #include "Simulation/Components.hpp"
+#include "Simulation/EraData.hpp"
 
 using namespace engine;
 using namespace engine::era;
 
 static uint64_t runSimulation(uint64_t seed, const CommandLog& log, uint64_t maxTicks = 10000) {
+    initEraData();
     World world(seed);
     registerCityCommands(world.commands());
     CitySystems::initCity(world);
@@ -80,6 +82,6 @@ TEST_CASE("Determinism - 10,000 Ticks Simulation Replay") {
     CHECK(hash1 != hashNoCommands);
 
     // Compare against baseline reference hash
-    constexpr uint64_t kReferenceHash10k = 15712780444600737175ULL;
+    constexpr uint64_t kReferenceHash10k = 9829627130785056071ULL;
     CHECK(hash1 == kReferenceHash10k);
 }
